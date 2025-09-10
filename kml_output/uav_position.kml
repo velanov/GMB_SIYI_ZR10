@@ -1,0 +1,104 @@
+<?xml version="1.0" ?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <NetworkLinkControl>
+    <Update/>
+    <Camera>
+      <longitude>8.608584</longitude>
+      <latitude>47.4163428</latitude>
+      <altitude>813.069</altitude>
+      <heading>313.85187912951017</heading>
+      <tilt>90</tilt>
+      <roll>0.0</roll>
+      <altitudeMode>absolute</altitudeMode>
+      <range>50</range>
+    </Camera>
+    <flyTo>
+      <duration>0.1</duration>
+      <flyToMode>smooth</flyToMode>
+      <Camera>
+        <longitude>8.608584</longitude>
+        <latitude>47.4163428</latitude>
+        <altitude>813.069</altitude>
+        <heading>313.85187912951017</heading>
+        <tilt>90</tilt>
+        <roll>0.0</roll>
+        <altitudeMode>absolute</altitudeMode>
+        <range>50</range>
+      </Camera>
+    </flyTo>
+  </NetworkLinkControl>
+  <Document>
+    <name>UAV Current Position</name>
+    <Style id="uav_style">
+      <IconStyle>
+        <scale>1.2</scale>
+        <heading>179.05187912951018</heading>
+        <Icon>
+          <href>http://maps.google.com/mapfiles/kml/shapes/airports.png</href>
+        </Icon>
+      </IconStyle>
+      <LabelStyle>
+        <scale>0.8</scale>
+      </LabelStyle>
+    </Style>
+    <Placemark>
+      <name>UAV - UNKNOWN</name>
+      <description>
+        &lt;![CDATA[
+        &lt;table border=&quot;1&quot; cellpadding=&quot;5&quot;&gt;
+        &lt;tr&gt;&lt;td&gt;Latitude:&lt;/td&gt;&lt;td&gt;47.416343°&lt;/td&gt;&lt;/tr&gt;
+        &lt;tr&gt;&lt;td&gt;Longitude:&lt;/td&gt;&lt;td&gt;8.608584°&lt;/td&gt;&lt;/tr&gt;
+        &lt;tr&gt;&lt;td&gt;Altitude:&lt;/td&gt;&lt;td&gt;813.1 m&lt;/td&gt;&lt;/tr&gt;
+        &lt;tr&gt;&lt;td&gt;Heading:&lt;/td&gt;&lt;td&gt;179.1°&lt;/td&gt;&lt;/tr&gt;
+        &lt;tr&gt;&lt;td&gt;Speed:&lt;/td&gt;&lt;td&gt;0.0 m/s&lt;/td&gt;&lt;/tr&gt;
+        &lt;tr&gt;&lt;td&gt;Flight Mode:&lt;/td&gt;&lt;td&gt;UNKNOWN&lt;/td&gt;&lt;/tr&gt;
+        &lt;tr&gt;&lt;td&gt;Battery:&lt;/td&gt;&lt;td&gt;0.0 V&lt;/td&gt;&lt;/tr&gt;
+        &lt;tr&gt;&lt;td&gt;Updated:&lt;/td&gt;&lt;td&gt;21:16:13&lt;/td&gt;&lt;/tr&gt;
+        &lt;/table&gt;
+        ]]&gt;
+        </description>
+      <styleUrl>#uav_style</styleUrl>
+      <Point>
+        <coordinates>8.608584,47.4163428,813.069</coordinates>
+        <altitudeMode>absolute</altitudeMode>
+      </Point>
+    </Placemark>
+    <Style id="camera_view_style">
+      <PolyStyle>
+        <color>4400FF00</color>
+        <fill>1</fill>
+        <outline>1</outline>
+      </PolyStyle>
+      <LineStyle>
+        <color>FF00FF00</color>
+        <width>2</width>
+      </LineStyle>
+    </Style>
+    <Placemark>
+      <name>Camera View</name>
+      <description>Gimbal viewing direction
+Yaw: 134.8°
+Pitch: 25.0°</description>
+      <styleUrl>#camera_view_style</styleUrl>
+      <Polygon>
+        <extrude>0</extrude>
+        <altitudeMode>absolute</altitudeMode>
+        <outerBoundaryIs>
+          <LinearRing>
+            <coordinates>8.608584,47.4163428,813.069 8.596901689681587,47.4182913853416,1235.6872617406993 8.599906548710841,47.42198287561641,1235.6872617406993 8.605237204314859,47.42416303713094,1235.6872617406993 8.608584,47.4163428,813.069</coordinates>
+          </LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+    <Camera>
+      <longitude>8.608584</longitude>
+      <latitude>47.4163428</latitude>
+      <altitude>815.069</altitude>
+      <heading>313.85187912951017</heading>
+      <tilt>115.0</tilt>
+      <roll>0.0</roll>
+      <altitudeMode>absolute</altitudeMode>
+      <range>500</range>
+    </Camera>
+  </Document>
+</kml>
