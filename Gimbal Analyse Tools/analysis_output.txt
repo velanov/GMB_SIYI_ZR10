@@ -1,0 +1,72 @@
+Gimbal Log Analyzer
+==================================================
+Analyzing gimbal_log.txt...
+Processing 4581 log lines...
+Parsed 1436 commands, 0 recoveries, 51 warnings
+
+======================================================================
+GIMBAL PERFORMANCE ANALYSIS
+======================================================================
+Analysis Period: 2025-09-08 15:34:54 to 2025-09-08 15:39:45
+Total Commands: 1436
+
+YAW TRACKING:
+  Mean Abs Error:     61.34°
+  Median Abs Error:    6.70°
+  Max Abs Error:     356.60°
+  Min Abs Error:       0.40°
+
+PITCH TRACKING:
+  Mean Abs Error:      5.94°
+  Median Abs Error:    3.60°
+  Max Abs Error:      76.40°
+  Min Abs Error:       0.00°
+
+CONTROL ACTIVITY:
+  Mean Yaw Speed:      5.15
+  Mean Pitch Speed:    3.91
+  Max Yaw Speed:         80
+  Max Pitch Speed:       67
+
+ACCURACY:
+  Yaw within ±2°:    205/1436 ( 14.3%)
+  Pitch within ±2°:   48/1436 (  3.3%)
+  Total error <3°:     0/1436 (  0.0%)
+
+======================================================================
+PROBLEM ANALYSIS
+======================================================================
+
+LARGE ERRORS:
+  Yaw errors >10°:   349
+  Pitch errors >10°: 291
+
+  Worst Yaw Errors:
+    2025-09-08 15:35:04 | Error: +356.6° | Speed:  -2
+    2025-09-08 15:35:04 | Error: +356.4° | Speed:  -2
+    2025-09-08 15:37:19 | Error: +355.7° | Speed:  -1
+    2025-09-08 15:37:18 | Error: +355.5° | Speed:  -1
+    2025-09-08 15:37:18 | Error: +355.3° | Speed:  -1
+
+  Worst Pitch Errors:
+    2025-09-08 15:37:31 | Error:  -76.4° | Speed: +67
+    2025-09-08 15:37:31 | Error:  -75.6° | Speed: +67
+    2025-09-08 15:37:31 | Error:  -63.1° | Speed: +56
+    2025-09-08 15:37:32 | Error:  -45.3° | Speed: +40
+    2025-09-08 15:37:32 | Error:  -29.3° | Speed: +25
+
+RECOVERY ATTEMPTS:
+  Total recoveries:  0
+
+WARNINGS:
+  Large yaw warnings: 51
+  Worst yaw differences:
+    2025-09-08 15:35:00 | Diff: +146.2° | Cmd: +80
+    2025-09-08 15:35:02 | Diff: -145.7° | Cmd: -80
+    2025-09-08 15:35:00 | Diff: +143.0° | Cmd: +80
+    2025-09-08 15:35:00 | Diff: +132.1° | Cmd: +80
+    2025-09-08 15:35:02 | Diff: -124.6° | Cmd: -80
+Detailed analysis saved to gimbal_analysis.txt
+
+======================================================================
+Analysis complete! Check 'gimbal_analysis.txt' for detailed data.
