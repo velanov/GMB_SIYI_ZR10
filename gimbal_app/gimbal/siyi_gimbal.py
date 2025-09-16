@@ -59,14 +59,20 @@ class SiyiGimbal:
             return True
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-            self.sock.settimeout(0.2)
+            # Increased timeout from 0.2 to 1.0 seconds for better stability
+            self.sock.settimeout(1.0)
+            # Set socket buffer sizes to handle network issues
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 65536)
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 65536)
             self._rx_alive = True
             self._rx_thread = threading.Thread(target=self._rx_loop, daemon=True)
             self._rx_thread.start()
             self.request_config()
             self._enable_stream(self._stream_hz)
+            print(f"[GIMBAL] Successfully connected to {self.ip}:{self.port}")
             return True
-        except Exception:
+        except Exception as e:
+            print(f"[GIMBAL] Failed to start connection: {e}")
             return False
     
     def stop(self):
@@ -282,6 +288,39 @@ class SiyiGimbal:
                 print(f"[GIMBAL] Force recovery failed: {e}")
                 self.logger.log_error("Force recovery failed", e)
     
+    def zoom_in(self):
+        """Start zooming in (continuous zoom)"""
+        if self.sock:
+            try:
+                # Command 0x05 with payload 1 for zoom in
+                payload = struct.pack("<b", 1)
+                self.sock.sendto(self._create_frame(0x05, payload), (self.ip, self.port))
+                print("[GIMBAL] Zoom in started")
+            except Exception as e:
+                print(f"[GIMBAL] Zoom in failed: {e}")
+    
+    def zoom_out(self):
+        """Start zooming out (continuous zoom)"""
+        if self.sock:
+            try:
+                # Command 0x05 with payload -1 for zoom out
+                payload = struct.pack("<b", -1)
+                self.sock.sendto(self._create_frame(0x05, payload), (self.ip, self.port))
+                print("[GIMBAL] Zoom out started")
+            except Exception as e:
+                print(f"[GIMBAL] Zoom out failed: {e}")
+    
+    def zoom_hold(self):
+        """Stop zooming (hold current zoom level)"""
+        if self.sock:
+            try:
+                # Command 0x05 with payload 0 for zoom stop/hold
+                payload = struct.pack("<b", 0)
+                self.sock.sendto(self._create_frame(0x05, payload), (self.ip, self.port))
+                print("[GIMBAL] Zoom hold/stop")
+            except Exception as e:
+                print(f"[GIMBAL] Zoom hold failed: {e}")
+    
     def _parse_packet(self, packet: bytes):
         if len(packet) < 12 or packet[:2] != b"\x55\x66":
             return
@@ -304,23 +343,102 @@ class SiyiGimbal:
             self.mount_dir = {1:"Normal", 2:"UpsideDown"}.get(mount_dir, f"Unknown({mount_dir})")
     
     def _rx_loop(self):
+        consecutive_errors = 0
+        max_consecutive_errors = 10
+        
         while self._rx_alive:
-            if time.time() - self._last_enable > 2.0:
+            # More robust stream keepalive - enable more frequently
+            if time.time() - self._last_enable > 1.5:  # Reduced from 2.0 to 1.5
                 self._enable_stream(self._stream_hz)
+            
             try:
                 data, _ = self.sock.recvfrom(2048)
                 self._parse_packet(data)
+                consecutive_errors = 0  # Reset error counter on successful receive
+                
             except socket.timeout:
+                # Probe attitude more frequently on timeout
                 self._probe_attitude()
+                consecutive_errors += 1
+                if consecutive_errors > max_consecutive_errors:
+                    print(f"[GIMBAL] Too many consecutive timeouts ({consecutive_errors}), attempting reconnection")
+                    self._attempt_reconnect()
+                    consecutive_errors = 0
                 continue
-            except OSError:
-                break
+                
+            except OSError as e:
+                error_msg = str(e)
+                print(f"[GIMBAL] Socket error in RX loop: {error_msg}")
+                
+                # Handle specific socket errors differently
+                if "Bad file descriptor" in error_msg or "Socket operation on non-socket" in error_msg:
+                    print(f"[GIMBAL] Socket closed unexpectedly - attempting restart")
+                    break  # Socket is invalid, need to restart connection
+                
+                consecutive_errors += 1
+                if consecutive_errors > 8:  # Increased tolerance from 3 to 8
+                    print(f"[GIMBAL] Too many consecutive socket errors ({consecutive_errors}), restarting connection")
+                    break
+                    
+                time.sleep(0.3)  # Increased pause from 0.1 to 0.3 seconds
+                continue
+                
+            except Exception as e:
+                print(f"[GIMBAL] Unexpected error in RX loop: {e}")
+                consecutive_errors += 1
+                if consecutive_errors > 5:
+                    break
+                time.sleep(0.1)
+                continue
     
+    def _attempt_reconnect(self):
+        """Attempt to reconnect the gimbal connection with improved stability"""
+        print("[GIMBAL] Attempting to reconnect...")
+        try:
+            # Safely close existing socket
+            if self.sock:
+                try:
+                    self.sock.close()
+                except Exception:
+                    pass
+                self.sock = None
+            
+            # Wait longer for network to stabilize
+            time.sleep(1.0)  # Increased from 0.5 to 1.0 seconds
+            
+            # Create new socket with improved settings
+            self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            self.sock.settimeout(1.0)
+            
+            # Enhanced socket buffer sizes and options
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 65536)
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 65536)
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)  # Allow address reuse
+            
+            # Test connection with a simple request first
+            self.request_config()
+            time.sleep(0.2)  # Allow config response
+            
+            # Enable stream after config is stable
+            self._enable_stream(self._stream_hz)
+            
+            print("[GIMBAL] Reconnection successful")
+        except Exception as e:
+            print(f"[GIMBAL] Reconnection failed: {e}")
+            # Ensure socket is cleaned up on failure
+            if self.sock:
+                try:
+                    self.sock.close()
+                except Exception:
+                    pass
+                self.sock = None
+
     @property
     def is_connected(self) -> bool:
+        # More lenient connection check - allow up to 3 seconds without updates
         return (self.sock is not None and 
                 self.yaw_abs is not None and 
-                time.time() - self.last_update < 2.0)
+                time.time() - self.last_update < 3.0)
     
     def get_corrected_angles(self, aircraft_heading: float) -> Tuple[Optional[float], Optional[float]]:
         if not self.is_connected:

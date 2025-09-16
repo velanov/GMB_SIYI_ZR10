@@ -15,7 +15,9 @@ class MAVLinkHandler:
         self.target_sys = 1
         self.target_comp = 1
         self.reconnect_attempts = 0
-        self.max_attempts = 5
+        self.max_attempts = 20  # Increased from 5 to 20 for better persistence
+        self.last_heartbeat = 0
+        self.heartbeat_timeout = 10.0  # Seconds without heartbeat before reconnect
         self._connect()
     
     def _send_heartbeat(self):
@@ -33,36 +35,52 @@ class MAVLinkHandler:
 
     def _connect(self) -> bool:
         try:
+            print(f"[MAVLINK] Connecting to RX: {self.rx_conn_str}")
             # RX link
             self.rx_link = mavutil.mavlink_connection(self.rx_conn_str, source_system=246, source_component=190)
             # TX link (if specified separately)
             if self.tx_conn_str:
+                print(f"[MAVLINK] Connecting to TX: {self.tx_conn_str}")
                 self.tx_link = mavutil.mavlink_connection(self.tx_conn_str, source_system=246, source_component=190)
             else:
                 self.tx_link = self.rx_link
 
             # Send a few heartbeats so QGC sees us
-            for _ in range(3):
+            for _ in range(5):  # Increased from 3 to 5
                 self._send_heartbeat()
-                time.sleep(0.1)
+                time.sleep(0.2)  # Increased delay
 
             # Wait for vehicle heartbeat and capture sysid/compid
-            hb = self.rx_link.wait_heartbeat(timeout=10)
+            print("[MAVLINK] Waiting for vehicle heartbeat...")
+            hb = self.rx_link.wait_heartbeat(timeout=15)  # Increased timeout from 10 to 15
             if hb:
                 try:
                     self.target_sys = hb.get_srcSystem()
                     self.target_comp = hb.get_srcComponent()
+                    print(f"[MAVLINK] Found vehicle: sys={self.target_sys}, comp={self.target_comp}")
                 except Exception:
                     self.target_sys, self.target_comp = 1, 1
+                    print("[MAVLINK] Using default sys=1, comp=1")
+                self.last_heartbeat = time.time()
+            else:
+                print("[MAVLINK] No heartbeat received, continuing anyway")
+                self.last_heartbeat = time.time()
 
             self.connected = True
             self.reconnect_attempts = 0
+            print("[MAVLINK] Connection established successfully")
             return True
-        except Exception:
+        except Exception as e:
+            print(f"[MAVLINK] Connection failed (attempt {self.reconnect_attempts + 1}/{self.max_attempts}): {e}")
             self.connected = False
             self.reconnect_attempts += 1
             if self.reconnect_attempts < self.max_attempts:
-                threading.Timer(2.0, self._connect).start()
+                # Exponential backoff: 2, 4, 8, 16 seconds (max 16)
+                delay = min(2 ** self.reconnect_attempts, 16)
+                print(f"[MAVLINK] Retrying in {delay} seconds...")
+                threading.Timer(delay, self._connect).start()
+            else:
+                print(f"[MAVLINK] Max reconnection attempts reached ({self.max_attempts})")
             return False
 
     def set_connection_strings(self, rx_conn: str, tx_conn: Optional[str]):
@@ -86,10 +104,27 @@ class MAVLinkHandler:
         self.reconnect_attempts = 0
         self._connect()
     
+    def _check_heartbeat_health(self):
+        """Check if we're still receiving heartbeats and reconnect if needed"""
+        if self.connected and time.time() - self.last_heartbeat > self.heartbeat_timeout:
+            print(f"[MAVLINK] No heartbeat for {self.heartbeat_timeout}s, reconnecting...")
+            self.connected = False
+            self.reconnect_attempts = 0
+            # Start reconnection in a separate thread
+            threading.Thread(target=self._connect, daemon=True).start()
+
     def get_position(self) -> Optional[Dict[str, float]]:
         if not self.connected or not self.rx_link:
             return None
         try:
+            # Check for heartbeat to update connection health
+            hb_msg = self.rx_link.recv_match(type='HEARTBEAT', blocking=False)
+            if hb_msg:
+                self.last_heartbeat = time.time()
+            
+            # Check heartbeat health
+            self._check_heartbeat_health()
+            
             msg = self.rx_link.recv_match(type='GLOBAL_POSITION_INT', blocking=False)
             if msg:
                 return {

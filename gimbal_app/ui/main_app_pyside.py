@@ -15,7 +15,7 @@ from PySide6.QtWidgets import (
     QSplitter, QListWidget, QListWidgetItem, QFileDialog
 )
 from PySide6.QtCore import Qt, QTimer, Signal, QThread
-from PySide6.QtGui import QFont, QPalette, QColor, QIcon, QPixmap
+from PySide6.QtGui import QFont, QPalette, QColor, QIcon, QPixmap, QWheelEvent, QMouseEvent
 
 # Import the existing backend systems
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -60,6 +60,11 @@ class ModernGimbalApp(QMainWindow):
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self.update_displays)
         self.update_timer.start(Config.GUI_UPDATE_MS)
+        
+        # Setup connection health checker
+        self.connection_timer = QTimer()
+        self.connection_timer.timeout.connect(self.check_connections)
+        self.connection_timer.start(5000)  # Check every 5 seconds
     
     def init_backend_systems(self):
         """Initialize all backend systems (same as tkinter version)"""
@@ -329,6 +334,29 @@ class ModernGimbalApp(QMainWindow):
         down_row.addWidget(self.btn_down)
         down_row.addStretch()
         controls_layout.addLayout(down_row)
+        
+        # Zoom controls row
+        zoom_row = QHBoxLayout()
+        zoom_row.addStretch()
+        
+        self.btn_zoom_out = QPushButton("🔍➖")
+        self.btn_zoom_out.setObjectName("zoomButton")
+        self.btn_zoom_out.setToolTip("Zoom Out")
+        zoom_row.addWidget(self.btn_zoom_out)
+        
+        zoom_label = QLabel("ZOOM")
+        zoom_label.setObjectName("axisLabel")
+        zoom_label.setAlignment(Qt.AlignCenter)
+        zoom_label.setMinimumWidth(60)
+        zoom_row.addWidget(zoom_label)
+        
+        self.btn_zoom_in = QPushButton("🔍➕")
+        self.btn_zoom_in.setObjectName("zoomButton")
+        self.btn_zoom_in.setToolTip("Zoom In")
+        zoom_row.addWidget(self.btn_zoom_in)
+        
+        zoom_row.addStretch()
+        controls_layout.addLayout(zoom_row)
         
         # Bottom row with PITCH label
         bottom_row = QHBoxLayout()
@@ -899,7 +927,6 @@ class ModernGimbalApp(QMainWindow):
                 stop: 0 #606060, stop: 0.8 #505050, stop: 1 #404040);
             border-color: #00ff00;
             color: #00ff00;
-            text-shadow: 0 0 5px #00ff00;
         }
         
         #dpadButton:pressed {
@@ -907,7 +934,6 @@ class ModernGimbalApp(QMainWindow):
                 stop: 0 #707070, stop: 0.8 #606060, stop: 1 #505050);
             border-color: #00cc00;
             color: #00cc00;
-            text-shadow: 0 0 8px #00cc00;
         }
         
         #centerButton {
@@ -929,7 +955,6 @@ class ModernGimbalApp(QMainWindow):
                 stop: 0 #707070, stop: 0.8 #606060, stop: 1 #505050);
             border-color: #ffaa00;
             color: #ffaa00;
-            text-shadow: 0 0 5px #ffaa00;
         }
         
         #centerButton:pressed {
@@ -937,7 +962,34 @@ class ModernGimbalApp(QMainWindow):
                 stop: 0 #808080, stop: 0.8 #707070, stop: 1 #606060);
             border-color: #ff8800;
             color: #ff8800;
-            text-shadow: 0 0 8px #ff8800;
+        }
+        
+        #zoomButton {
+            background: qradialgradient(cx: 0.5, cy: 0.5, radius: 0.5,
+                stop: 0 #404060, stop: 0.8 #303050, stop: 1 #202040);
+            border: 2px solid #4080ff;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            color: #4080ff;
+            min-width: 40px;
+            min-height: 25px;
+            max-width: 40px;
+            max-height: 25px;
+        }
+        
+        #zoomButton:hover {
+            background: qradialgradient(cx: 0.5, cy: 0.5, radius: 0.5,
+                stop: 0 #5070a0, stop: 0.8 #406090, stop: 1 #305080);
+            border-color: #60a0ff;
+            color: #60a0ff;
+        }
+        
+        #zoomButton:pressed {
+            background: qradialgradient(cx: 0.5, cy: 0.5, radius: 0.5,
+                stop: 0 #6080b0, stop: 0.8 #5070a0, stop: 1 #406090);
+            border-color: #80c0ff;
+            color: #80c0ff;
         }
         
         #axisLabel {
@@ -1384,7 +1436,7 @@ class ModernGimbalApp(QMainWindow):
         else:
             self.lbl_gimbal_status.setText(f"DISCONNECTED\n{Config.SIYI_IP}:{Config.SIYI_PORT}")
             self.lbl_gimbal_status.setStyleSheet("color: #ff0000;")
-            self.lbl_gimbal_details.setText("Mount: — | Mode: —")
+            self.lbl_gimbal_details.setText("Auto-reconnecting...")
         
         # Update target display
         self.update_target_display()
@@ -1506,7 +1558,19 @@ class ModernGimbalApp(QMainWindow):
                         0.0)  # Ground level for gimbal targets
         return None, None, None
     
-    # Status overlay method removed - using OpenCV overlay in camera stream instead
+    def check_connections(self):
+        """Periodically check and attempt to repair connections"""
+        # Check gimbal connection
+        if not self.gimbal.is_connected:
+            print("[CONNECTION] Gimbal disconnected, attempting restart...")
+            try:
+                self.gimbal.stop()
+                time.sleep(0.5)
+                self.gimbal.start()
+            except Exception as e:
+                print(f"[CONNECTION] Failed to restart gimbal: {e}")
+        
+        # MAVLink connection health is handled internally by MAVLinkHandler
     
     def update_target_display(self):
         """Update compact status display in sidebar"""
@@ -1619,6 +1683,13 @@ class ModernGimbalApp(QMainWindow):
         # Movement state tracking
         self.gimbal_movement = {"active": False, "timer": None}
         
+        # Mouse drag gimbal control state
+        self.mouse_drag = {
+            "active": False,
+            "last_pos": None,
+            "sensitivity": 1.5  # Increased sensitivity for more responsive control
+        }
+        
         # Connect button press/release events for continuous movement
         self.btn_left.pressed.connect(lambda: self.start_gimbal_movement(-self.speed_slider.value(), 0))
         self.btn_left.released.connect(self.stop_gimbal_movement)
@@ -1633,6 +1704,13 @@ class ModernGimbalApp(QMainWindow):
         self.btn_down.released.connect(self.stop_gimbal_movement)
         
         self.btn_center.clicked.connect(self.center_gimbal)
+        
+        # Zoom button events with press-and-hold behavior
+        self.btn_zoom_in.pressed.connect(self.start_zoom_in)
+        self.btn_zoom_in.released.connect(self.stop_zoom)
+        
+        self.btn_zoom_out.pressed.connect(self.start_zoom_out)
+        self.btn_zoom_out.released.connect(self.stop_zoom)
     
     def start_gimbal_movement(self, yaw_speed, pitch_speed):
         """Start continuous gimbal movement"""
@@ -1673,15 +1751,73 @@ class ModernGimbalApp(QMainWindow):
         if self.gimbal.is_connected:
             self.gimbal.jog(0, 0)  # Stop movement
     
+    def start_zoom_in(self):
+        """Start continuous zoom in"""
+        if self.gimbal.is_connected:
+            self.gimbal.zoom_in()
+    
+    def start_zoom_out(self):
+        """Start continuous zoom out"""
+        if self.gimbal.is_connected:
+            self.gimbal.zoom_out()
+    
+    def stop_zoom(self):
+        """Stop zoom operation"""
+        if self.gimbal.is_connected:
+            self.gimbal.zoom_hold()
+    
     def move_gimbal(self, yaw_speed, pitch_speed):
         """Move gimbal with given speeds (legacy method)"""
         if self.gimbal.is_connected:
             self.gimbal.jog(yaw_speed, pitch_speed)
     
     def center_gimbal(self):
-        """Center the gimbal"""
+        """Center the gimbal with aggressive centering"""
         if self.gimbal.is_connected:
+            print("[UI] Starting aggressive gimbal centering...")
+            # Try multiple centering approaches for better reliability
+            
+            # Method 1: Use built-in center command
+            self.gimbal.center_gimbal()
+            
+            # Method 2: Also try direct center command
             self.gimbal.center()
+            
+            # Method 3: Manual centering with movement commands
+            # Send gimbal to approximate center position with movement
+            QTimer.singleShot(100, lambda: self._force_center_position())
+    
+    def _force_center_position(self):
+        """Force gimbal to center using movement commands"""
+        if not self.gimbal.is_connected:
+            return
+            
+        print("[UI] Force centering with movement commands...")
+        
+        # Get current gimbal position
+        current_yaw = self.gimbal.yaw_abs or 0
+        current_pitch = self.gimbal.pitch_norm or 0
+        
+        # Calculate required movement to reach center (0° yaw, 0° pitch)
+        yaw_error = -current_yaw  # How much we need to move in yaw
+        pitch_error = -current_pitch  # How much we need to move in pitch
+        
+        print(f"[UI] Current: Yaw={current_yaw:.1f}°, Pitch={current_pitch:.1f}°")
+        print(f"[UI] Centering errors: Yaw={yaw_error:.1f}°, Pitch={pitch_error:.1f}°")
+        
+        # Send movement commands to center (use higher speeds for faster centering)
+        center_speed = 50
+        yaw_speed = center_speed if yaw_error > 5 else (-center_speed if yaw_error < -5 else 0)
+        pitch_speed = center_speed if pitch_error > 5 else (-center_speed if pitch_error < -5 else 0)
+        
+        if abs(yaw_error) > 2 or abs(pitch_error) > 2:  # If not close to center
+            self.gimbal.jog(yaw_speed, pitch_speed)
+            # Continue centering in 200ms
+            QTimer.singleShot(200, self._force_center_position)
+        else:
+            # Close enough to center, stop movement
+            self.gimbal.jog(0, 0)
+            print("[UI] Gimbal centering completed")
     
     def request_gimbal_attitude(self):
         """Request gimbal attitude data"""
@@ -2254,6 +2390,106 @@ class ModernGimbalApp(QMainWindow):
             self.status_overlay.move(10, 10)
             # Let it auto-size based on content
             self.status_overlay.adjustSize()
+    
+    def wheelEvent(self, event: QWheelEvent):
+        """Handle mouse wheel events for zoom control"""
+        if not self.gimbal.is_connected:
+            super().wheelEvent(event)
+            return
+        
+        # Check if mouse is over the main camera view area (not over menu)
+        mouse_pos = event.position().toPoint()
+        
+        # If mouse is over the left menu area, ignore wheel events for zoom
+        if mouse_pos.x() < 300:  # Menu width is approximately 280px
+            super().wheelEvent(event)
+            return
+        
+        # Get wheel delta (positive = scroll up = zoom in, negative = scroll down = zoom out)
+        delta = event.angleDelta().y()
+        
+        if delta > 0:
+            # Scroll up = Zoom in
+            self.gimbal.zoom_in()
+            # Increased sensitivity - longer zoom duration
+            QTimer.singleShot(500, self.gimbal.zoom_hold)
+        elif delta < 0:
+            # Scroll down = Zoom out  
+            self.gimbal.zoom_out()
+            # Increased sensitivity - longer zoom duration
+            QTimer.singleShot(500, self.gimbal.zoom_hold)
+        
+        event.accept()
+    
+    def mousePressEvent(self, event: QMouseEvent):
+        """Handle mouse press events for drag gimbal control and centering"""
+        if self.gimbal.is_connected:
+            mouse_pos = event.position().toPoint()
+            
+            # If mouse is over the left menu area, ignore for gimbal control
+            if mouse_pos.x() < 300:  # Menu width is approximately 280px
+                super().mousePressEvent(event)
+                return
+            
+            if event.button() == Qt.LeftButton:
+                # Start drag mode for left click
+                self.mouse_drag["active"] = True
+                self.mouse_drag["last_pos"] = mouse_pos
+                event.accept()
+            elif event.button() == Qt.MiddleButton:
+                # Center gimbal on middle mouse button (scroll wheel click)
+                print("[GIMBAL] Middle click detected - centering gimbal")
+                self.gimbal.center_gimbal()
+                event.accept()
+            else:
+                super().mousePressEvent(event)
+        else:
+            super().mousePressEvent(event)
+    
+    def mouseReleaseEvent(self, event: QMouseEvent):
+        """Handle mouse release events"""
+        if event.button() == Qt.LeftButton and self.mouse_drag["active"]:
+            # Stop drag mode
+            self.mouse_drag["active"] = False
+            self.mouse_drag["last_pos"] = None
+            
+            # Stop gimbal movement
+            if self.gimbal.is_connected:
+                self.gimbal.jog(0, 0)
+            
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
+    
+    def mouseMoveEvent(self, event: QMouseEvent):
+        """Handle mouse move events for drag gimbal control"""
+        if self.mouse_drag["active"] and self.mouse_drag["last_pos"] and self.gimbal.is_connected:
+            current_pos = event.position().toPoint()
+            last_pos = self.mouse_drag["last_pos"]
+            
+            # Calculate movement delta
+            dx = current_pos.x() - last_pos.x()
+            dy = current_pos.y() - last_pos.y()
+            
+            # Convert mouse movement to gimbal speeds
+            # Positive dx = move right (positive yaw)
+            # Positive dy = move down (negative pitch, since screen Y is inverted)
+            sensitivity = self.mouse_drag["sensitivity"]
+            yaw_speed = int(dx * sensitivity * 3)  # Increased scaling for more responsive control
+            pitch_speed = int(-dy * sensitivity * 3)  # Negative because screen Y is inverted
+            
+            # Clamp speeds to reasonable limits
+            yaw_speed = max(-100, min(100, yaw_speed))
+            pitch_speed = max(-100, min(100, pitch_speed))
+            
+            # Send gimbal command
+            self.gimbal.jog(yaw_speed, pitch_speed)
+            
+            # Update last position
+            self.mouse_drag["last_pos"] = current_pos
+            event.accept()
+        else:
+            super().mouseMoveEvent(event)
 
 
 def main():

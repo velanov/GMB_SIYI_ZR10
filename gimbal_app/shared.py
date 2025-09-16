@@ -24,7 +24,7 @@ class Config:
     MAVLINK_TX_ADDRESS = ''                   # Empty = use RX link. For QGC: 'udpout:127.0.0.1:14550'
     
     # Timing
-    GUI_UPDATE_MS = 50
+    GUI_UPDATE_MS = 100  # Reduced from 50ms to 100ms for better stability
     SBS_UPDATE_S = 0.2
     ATTITUDE_REQUEST_MS = 100
     TRACKING_UPDATE_S = 1.0
