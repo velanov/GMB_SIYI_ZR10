@@ -110,6 +110,11 @@ class WaypointManager:
                 return (current.latitude, current.longitude, current.altitude)
             return None
     
+    def get_current_index(self) -> int:
+        """Get current waypoint index."""
+        with self._lock:
+            return self._current_index
+    
     def start_mission(self) -> bool:
         """
         Start the waypoint mission.

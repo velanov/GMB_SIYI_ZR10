@@ -1978,21 +1978,20 @@ class ModernGimbalApp(QMainWindow):
             print("[WAYPOINT] No waypoint mission loaded. Please start a mission first.")
             return
             
+        # For waypoint mode, make sure mission is active for tracking BEFORE selecting waypoint
+        if self.target_mode == "waypoint" and not self.google_earth.waypoint_manager.is_mission_active():
+            print("[WAYPOINT] Auto-starting waypoint mission for tracking...")
+            # Use sequential mode as default for dropdown selection
+            from gimbal_app.google_earth.waypoint_manager import TrackingMode
+            self.google_earth.waypoint_manager.start_mission(TrackingMode.MANUAL_SELECT)
+            self.lbl_mission_status.setText(f"MISSION: AUTO-STARTED")
+        
+        # Now select the waypoint
         selected_wp = self.google_earth.select_waypoint(index)
         
         if selected_wp:
             print(f"[WAYPOINT] Selected waypoint {index + 1}: {selected_wp['name']}")
-            
-            
             self.update_waypoint_selection()
-            
-            # For waypoint mode, make sure mission is active for tracking
-            if self.target_mode == "waypoint" and not self.google_earth.waypoint_manager.is_active():
-                print("[WAYPOINT] Auto-starting waypoint mission for tracking...")
-                # Use sequential mode as default for dropdown selection
-                from gimbal_app.google_earth.waypoint_manager import TrackingMode
-                self.google_earth.waypoint_manager.start_mission(TrackingMode.MANUAL_SELECT)
-                self.lbl_mission_status.setText(f"MISSION: AUTO-STARTED")
         else:
             print(f"[WAYPOINT] Failed to select waypoint at index {index}")
     
@@ -2002,7 +2001,7 @@ class ModernGimbalApp(QMainWindow):
             return
             
         try:
-            current_wp = self.google_earth.get_current_waypoint()
+            current_wp = self.google_earth.waypoint_manager.get_current_waypoint() if self.google_earth.waypoint_manager else None
             total_waypoints = len(self.google_earth.waypoint_manager.get_waypoints()) if self.google_earth.waypoint_manager else 0
             current_index = self.google_earth.waypoint_manager.get_current_index() if self.google_earth.waypoint_manager else -1
             
