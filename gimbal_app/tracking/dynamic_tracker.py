@@ -45,6 +45,14 @@ class DynamicTracker:
         self.target_lon = target_lon
         self.target_alt = alt
     
+    def update_radius(self, radius: float):
+        """Update the loiter radius during tracking"""
+        self.loiter_radius = radius
+        if self.active and self.mavlink.connected:
+            # Update the MAVLink loiter radius if currently tracking
+            if hasattr(self, 'target_lat') and hasattr(self, 'target_lon') and hasattr(self, 'target_alt'):
+                self.mavlink.set_loiter_mode(self.target_lat, self.target_lon, self.target_alt, radius)
+    
     def _worker_loop(self):
         while not self._stop:
             try:

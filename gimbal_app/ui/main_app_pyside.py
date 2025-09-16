@@ -476,6 +476,20 @@ class ModernGimbalApp(QMainWindow):
         self.waypoints_combo.setMaximumWidth(200)
         waypoint_layout.addWidget(self.waypoints_combo)
         
+        # Loiter radius control
+        radius_layout = QHBoxLayout()
+        radius_layout.addWidget(QLabel("Radius:"))
+        
+        self.waypoint_radius_spin = QSpinBox()
+        self.waypoint_radius_spin.setRange(10, 1000)
+        self.waypoint_radius_spin.setValue(100)
+        self.waypoint_radius_spin.setSuffix("m")
+        self.waypoint_radius_spin.setMaximumWidth(80)
+        self.waypoint_radius_spin.valueChanged.connect(self.on_waypoint_radius_changed)
+        radius_layout.addWidget(self.waypoint_radius_spin)
+        
+        radius_layout.addStretch()
+        waypoint_layout.addLayout(radius_layout)
         
         # Navigation buttons
         nav_layout = QHBoxLayout()
@@ -2006,12 +2020,24 @@ class ModernGimbalApp(QMainWindow):
             print(f"Error updating waypoint selection: {e}")
             self.lbl_current_waypoint.setText("WP: -/-")
     
+    def on_waypoint_radius_changed(self, radius):
+        """Handle radius change for current waypoint"""
+        print(f"Updated waypoint radius to {radius}m")
+        
+        # If tracking is active and in waypoint mode, update tracker radius in real-time
+        if (self.tracker.active and self.target_mode == "waypoint"):
+            self.tracker.update_radius(radius)
+            print(f"[TRACKING] Updated active tracker radius to {radius}m")
     
     def start_tracking(self):
         """Start dynamic tracking"""
         # Get parameters from UI
-        # Use default radius from UI
-        radius = self.radius_spin.value()
+        # For waypoint mode, use waypoint-specific radius if available
+        if self.target_mode == "waypoint":
+            radius = self.waypoint_radius_spin.value()
+            print(f"[TRACKING] Using waypoint-specific radius: {radius}m")
+        else:
+            radius = self.radius_spin.value()
             
         update_interval = self.update_spin.value()
         min_movement = self.movement_spin.value()
