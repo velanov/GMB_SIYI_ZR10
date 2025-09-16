@@ -476,20 +476,6 @@ class ModernGimbalApp(QMainWindow):
         self.waypoints_combo.setMaximumWidth(200)
         waypoint_layout.addWidget(self.waypoints_combo)
         
-        # Radius control for selected waypoint
-        radius_layout = QHBoxLayout()
-        radius_layout.addWidget(QLabel("Radius:"))
-        
-        self.waypoint_radius_spin = QSpinBox()
-        self.waypoint_radius_spin.setRange(10, 1000)
-        self.waypoint_radius_spin.setValue(100)
-        self.waypoint_radius_spin.setSuffix("m")
-        self.waypoint_radius_spin.setMaximumWidth(80)
-        self.waypoint_radius_spin.valueChanged.connect(self.on_waypoint_radius_changed)
-        radius_layout.addWidget(self.waypoint_radius_spin)
-        
-        radius_layout.addStretch()
-        waypoint_layout.addLayout(radius_layout)
         
         # Navigation buttons
         nav_layout = QHBoxLayout()
@@ -519,7 +505,6 @@ class ModernGimbalApp(QMainWindow):
         self.stored_missions = {}  # Dict to store loaded missions
         self.missions_file = "saved_missions.json"  # Persistent storage file
         self.waypoint_data = []  # Store current waypoint objects
-        self.waypoint_radii = {}  # Store radius for each waypoint index
         
         # Load saved missions from file
         self.load_saved_missions()
@@ -546,7 +531,6 @@ class ModernGimbalApp(QMainWindow):
         self.radius_spin.setRange(50, 500)
         self.radius_spin.setValue(Config.DEFAULT_LOITER_RADIUS)
         self.radius_spin.setSuffix(" m")
-        self.radius_spin.valueChanged.connect(self.on_tracking_radius_changed)
         radius_layout.addWidget(self.radius_spin)
         
         # Update interval
@@ -1597,9 +1581,8 @@ class ModernGimbalApp(QMainWindow):
             item_text = f"{i+1}. {waypoint.name} ({waypoint.latitude:.6f}, {waypoint.longitude:.6f})"
             self.waypoints_combo.addItem(item_text)
         
-        # Store waypoint data for radius management
+        # Store waypoint data
         self.waypoint_data = waypoints
-        self.waypoint_radii = {i: 100 for i in range(len(waypoints))}  # Default 100m radius
     
     def calculate_distance(self, lat1, lon1, lat2, lon2):
         """Calculate distance between two coordinates"""
@@ -1986,9 +1969,6 @@ class ModernGimbalApp(QMainWindow):
         if selected_wp:
             print(f"[WAYPOINT] Selected waypoint {index + 1}: {selected_wp['name']}")
             
-            # Update radius control to show current waypoint radius
-            if hasattr(self, 'waypoint_radii') and index in self.waypoint_radii:
-                self.waypoint_radius_spin.setValue(self.waypoint_radii[index])
             
             self.update_waypoint_selection()
             
@@ -2001,23 +1981,6 @@ class ModernGimbalApp(QMainWindow):
                 self.lbl_mission_status.setText(f"MISSION: AUTO-STARTED")
         else:
             print(f"[WAYPOINT] Failed to select waypoint at index {index}")
-    
-    def on_waypoint_radius_changed(self, radius):
-        """Handle radius change for current waypoint"""
-        current_index = self.waypoints_combo.currentIndex()
-        
-        if current_index >= 0 and hasattr(self, 'waypoint_radii'):
-            self.waypoint_radii[current_index] = radius
-            print(f"Updated waypoint {current_index + 1} radius to {radius}m")
-            
-            # If Google Earth integration exists, update the radius there too
-            if self.google_earth and hasattr(self.google_earth, 'set_waypoint_radius'):
-                self.google_earth.set_waypoint_radius(current_index, radius)
-            
-            # If tracking is active and this is the current target, update tracker radius
-            if (self.tracker.active and self.target_mode == "waypoint" and 
-                current_index == self.waypoints_combo.currentIndex()):
-                self.tracker.update_radius(radius)
     
     def update_waypoint_selection(self):
         """Update UI to reflect current waypoint selection"""
@@ -2035,9 +1998,6 @@ class ModernGimbalApp(QMainWindow):
                 # Update dropdown selection
                 self.waypoints_combo.setCurrentIndex(current_index)
                 
-                # Update radius display
-                if hasattr(self, 'waypoint_radii') and current_index in self.waypoint_radii:
-                    self.waypoint_radius_spin.setValue(self.waypoint_radii[current_index])
                 
             else:
                 self.lbl_current_waypoint.setText(f"WP: 0/{total_waypoints}")
@@ -2046,45 +2006,12 @@ class ModernGimbalApp(QMainWindow):
             print(f"Error updating waypoint selection: {e}")
             self.lbl_current_waypoint.setText("WP: -/-")
     
-    def get_current_waypoint_radius(self) -> float:
-        """Get radius for currently selected waypoint"""
-        current_index = self.waypoints_combo.currentIndex()
-        if hasattr(self, 'waypoint_radii') and current_index in self.waypoint_radii:
-            return float(self.waypoint_radii[current_index])
-        return 100.0  # Default radius
-    
-    def get_all_waypoint_radii(self) -> dict:
-        """Get all waypoint radii settings"""
-        return getattr(self, 'waypoint_radii', {})
-    
-    def set_waypoint_radius(self, index: int, radius: float):
-        """Set radius for specific waypoint"""
-        if not hasattr(self, 'waypoint_radii'):
-            self.waypoint_radii = {}
-        self.waypoint_radii[index] = radius
-        
-        # Update UI if this is the current waypoint
-        if self.waypoints_combo.currentIndex() == index:
-            self.waypoint_radius_spin.setValue(int(radius))
-    
-    def on_tracking_radius_changed(self, radius):
-        """Handle radius change for general tracking (non-waypoint modes)"""
-        print(f"[TRACKING] General radius changed to {radius}m")
-        
-        # If tracking is active and not in waypoint mode, update tracker radius
-        if self.tracker.active and self.target_mode != "waypoint":
-            self.tracker.update_radius(radius)
-            print(f"[TRACKING] Updated active tracker radius to {radius}m")
     
     def start_tracking(self):
         """Start dynamic tracking"""
         # Get parameters from UI
-        # For waypoint mode, use waypoint-specific radius if available
-        if self.target_mode == "waypoint":
-            radius = self.get_current_waypoint_radius()
-            print(f"[TRACKING] Using waypoint-specific radius: {radius}m")
-        else:
-            radius = self.radius_spin.value()
+        # Use default radius from UI
+        radius = self.radius_spin.value()
             
         update_interval = self.update_spin.value()
         min_movement = self.movement_spin.value()
