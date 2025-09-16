@@ -1,0 +1,9 @@
+{
+  "SIYI_IP": "192.168.144.25",
+  "SIYI_PORT": 37260,
+  "SBS_BIND": "0.0.0.0",
+  "SBS_PORT": 30003,
+  "MAVLINK_ADDRESS": "udp:127.0.0.1:14540",
+  "MAVLINK_TX_ADDRESS": "",
+  "GIMBAL_INVERTED": true
+}

@@ -2008,8 +2008,10 @@ class ModernGimbalApp(QMainWindow):
             if current_wp and current_index >= 0:
                 self.lbl_current_waypoint.setText(f"WP: {current_index + 1}/{total_waypoints}")
                 
-                # Update dropdown selection
+                # Update dropdown selection without triggering signal
+                self.waypoints_combo.blockSignals(True)
                 self.waypoints_combo.setCurrentIndex(current_index)
+                self.waypoints_combo.blockSignals(False)
                 
                 
             else:

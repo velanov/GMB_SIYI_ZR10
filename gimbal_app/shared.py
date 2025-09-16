@@ -16,6 +16,7 @@ class Config:
     # Network (will be loaded/saved from JSON)
     SIYI_IP = "192.168.144.25"
     SIYI_PORT = 37260
+    SIYI_CAMERA_PORT = 8554
     SBS_BIND = "0.0.0.0"
     SBS_PORT = 30003
     # RX=listen telemetry, TX=send commands (kept separate for QGC forwarding scenario)
@@ -119,7 +120,7 @@ class SettingsStore:
     PATH = os.path.join(BASE_DIR, "gimbal_gps_settings_v2.json")
 
     KEYS = [
-        "SIYI_IP","SIYI_PORT","SBS_BIND","SBS_PORT",
+        "SIYI_IP","SIYI_PORT","SIYI_CAMERA_PORT","SBS_BIND","SBS_PORT",
         "MAVLINK_ADDRESS","MAVLINK_TX_ADDRESS"
     ]
 

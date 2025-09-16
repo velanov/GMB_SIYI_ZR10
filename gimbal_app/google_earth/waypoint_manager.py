@@ -186,6 +186,37 @@ class WaypointManager:
             
             return next_status.waypoint
     
+    def previous_waypoint(self) -> Optional[Waypoint]:
+        """
+        Move to the previous waypoint in sequential order.
+        
+        Returns:
+            Previous waypoint if available, None if at beginning
+        """
+        with self._lock:
+            if not self._is_active or not self._waypoints:
+                return None
+            
+            # Calculate previous index
+            prev_index = self._current_index - 1
+            if prev_index < 0:
+                # At beginning of mission
+                return None
+            
+            # Mark current waypoint as not tracking
+            if 0 <= self._current_index < len(self._waypoints):
+                self._waypoints[self._current_index].currently_tracking = False
+            
+            # Move to previous waypoint
+            self._current_index = prev_index
+            prev_status = self._waypoints[prev_index]
+            prev_status.currently_tracking = True
+            
+            if self._on_waypoint_changed:
+                self._on_waypoint_changed(prev_status.waypoint)
+            
+            return prev_status.waypoint
+    
     def select_waypoint(self, index: int) -> Optional[Waypoint]:
         """
         Manually select a waypoint by index.

@@ -24,7 +24,7 @@ fi
 
 # Try xcb with system plugins first (this shows actual GUI windows)
 echo "Trying Qt platform: xcb with system plugins"
-if QT_IM_MODULE="" QT_PLUGIN_PATH=/usr/lib/x86_64-linux-gnu/qt6/plugins QT_QPA_PLATFORM=xcb python3 run_pyside6_app.py; then
+if QT_IM_MODULE="" QT_PLUGIN_PATH=/usr/lib/x86_64-linux-gnu/qt6/plugins QT_QPA_PLATFORM=xcb ./venv/bin/python run_pyside6_app.py; then
     echo "Success with xcb platform!"
     exit 0
 fi
@@ -33,7 +33,7 @@ echo "xcb failed, trying minimal (headless but stable)..."
 
 # Try minimal as backup (no GUI but stable)
 echo "Trying Qt platform: minimal (no GUI window)"
-if QT_QPA_PLATFORM=minimal python3 run_pyside6_app.py; then
+if QT_QPA_PLATFORM=minimal ./venv/bin/python run_pyside6_app.py; then
     echo "App running in headless mode - no GUI window visible"
     exit 0
 fi
@@ -43,7 +43,7 @@ echo "All stable platforms failed, trying problematic ones with short timeout...
 # Last resort: try xcb and wayland with very short timeouts
 for platform in xcb wayland; do
     echo "Trying Qt platform: $platform (short timeout)"
-    if timeout 5s bash -c "QT_QPA_PLATFORM=$platform python3 run_pyside6_app.py"; then
+    if timeout 5s bash -c "QT_QPA_PLATFORM=$platform ./venv/bin/python run_pyside6_app.py"; then
         echo "Success with platform: $platform"
         break
     else

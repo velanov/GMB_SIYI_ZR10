@@ -118,6 +118,9 @@ class SiyiGimbal:
         # CRITICAL: Clamp angles to safe limits BEFORE any processing
         pitch_deg = max(min(pitch_deg, 89.0), -89.0)  # Prevent ±90° exactly
         yaw_deg = yaw_deg % 360.0  # Normalize yaw
+        
+        # UPSIDE-DOWN MOUNTING: Invert pitch for upside-down gimbal
+        pitch_deg = -pitch_deg  # Flip pitch direction for upside-down mount
             
         try:
             current_yaw = self.yaw_abs if self.yaw_abs is not None else 0
@@ -173,15 +176,15 @@ class SiyiGimbal:
                 return
                 
             # Use proportional control for smooth movement
-            # Convert angle difference to movement speed (-100 to +100)
+            # Convert angle difference to movement speed - REDUCED MAX SPEED to prevent oscillation
             max_diff = 90.0  # Maximum difference for full speed
             
-            yaw_speed = clamp((yaw_diff / max_diff) * 100, -100, 100)
+            yaw_speed = clamp((yaw_diff / max_diff) * 40, -40, 40)  # Reduced from 100 to 40
             # PITCH DIRECTION FIX: Invert the calculation
             # When pitch_diff > 0 (target higher than current), we need NEGATIVE speed (up)
             # When pitch_diff < 0 (target lower than current), we need POSITIVE speed (down)
             # Protocol: negative speed = up, positive speed = down
-            pitch_speed_raw = -clamp((pitch_diff / max_diff) * 100, -100, 100)  # Inverted for correct direction
+            pitch_speed_raw = -clamp((pitch_diff / max_diff) * 40, -40, 40)  # Reduced from 100 to 40, inverted for correct direction
             
             # OVERSHOOT PROTECTION: Decelerate when approaching target
             # Reduce speed when within 10° of target to prevent overshooting (reduced from 20°)
@@ -213,10 +216,10 @@ class SiyiGimbal:
             pitch_speed = int(pitch_speed * speed_factor)
             
             # MINIMUM SPEED FIX: Ensure non-zero speeds for significant differences
-            if abs(yaw_diff) > 1.0 and yaw_speed == 0:
-                yaw_speed = 2 if yaw_diff > 0 else -2  # Minimum speed
-            if abs(pitch_diff) > 1.0 and pitch_speed == 0:
-                pitch_speed = 2 if pitch_diff > 0 else -2  # Minimum speed
+            if abs(yaw_diff) > 1.0 and abs(yaw_speed) < 5:
+                yaw_speed = 5 if yaw_diff > 0 else -5  # Minimum speed increased to 5
+            if abs(pitch_diff) > 1.0 and abs(pitch_speed) < 5:
+                pitch_speed = 5 if pitch_speed > 0 else -5  # Minimum speed increased to 5
             
             print(f"[GIMBAL] Sending jog command: yaw_speed={yaw_speed}, pitch_speed={pitch_speed}")
             

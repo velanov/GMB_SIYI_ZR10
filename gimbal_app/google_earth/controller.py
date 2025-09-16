@@ -163,6 +163,26 @@ class GoogleEarthController:
         
         return None
     
+    def previous_waypoint(self) -> Optional[Dict[str, Any]]:
+        """
+        Move to the previous waypoint in the mission.
+        
+        Returns:
+            Dictionary with previous waypoint info or None if at beginning
+        """
+        prev_wp = self.waypoint_manager.previous_waypoint()
+        
+        if prev_wp:
+            return {
+                'name': prev_wp.name,
+                'latitude': prev_wp.latitude,
+                'longitude': prev_wp.longitude,
+                'altitude': prev_wp.altitude,
+                'description': prev_wp.description
+            }
+        
+        return None
+    
     def select_waypoint(self, index: int) -> Optional[Dict[str, Any]]:
         """
         Manually select a waypoint by index.
