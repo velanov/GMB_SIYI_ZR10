@@ -1,6 +1,6 @@
 {
   "Sinor": {
-    "file_path": "/home/zagros/Documents/Sinor.kml",
+    "file_path": "/home/zagros/Sinor.kml",
     "waypoints": [
       {
         "name": "Sinor 1",
@@ -20,13 +20,6 @@
         "name": "Sinor3",
         "latitude": 47.44809905419169,
         "longitude": 8.675231888421742,
-        "altitude": 0.0,
-        "description": ""
-      },
-      {
-        "name": "SInor 4",
-        "latitude": 47.43506051125862,
-        "longitude": 8.630351730056322,
         "altitude": 0.0,
         "description": ""
       }

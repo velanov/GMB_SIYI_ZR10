@@ -185,27 +185,34 @@ class SiyiGimbal:
             # Convert angle difference to movement speed - REDUCED MAX SPEED to prevent oscillation
             max_diff = 90.0  # Maximum difference for full speed
             
-            yaw_speed = clamp((yaw_diff / max_diff) * 40, -40, 40)  # Reduced from 100 to 40
+            yaw_speed = clamp((yaw_diff / max_diff) * 80, -80, 80)  # Increased from 40 to 80 for faster locking
             # PITCH DIRECTION FIX: Invert the calculation
             # When pitch_diff > 0 (target higher than current), we need NEGATIVE speed (up)
             # When pitch_diff < 0 (target lower than current), we need POSITIVE speed (down)
             # Protocol: negative speed = up, positive speed = down
-            pitch_speed_raw = -clamp((pitch_diff / max_diff) * 40, -40, 40)  # Reduced from 100 to 40, inverted for correct direction
+            pitch_speed_raw = -clamp((pitch_diff / max_diff) * 80, -80, 80)  # Increased from 40 to 80 for faster locking
             
             # OVERSHOOT PROTECTION: Decelerate when approaching target
             # Reduce speed when within 10° of target to prevent overshooting (reduced from 20°)
             yaw_decel_factor = 1.0
             pitch_decel_factor = 1.0
             
-            if abs(yaw_diff) < 10.0:  # Within 10° of yaw target (was 20°)
-                yaw_decel_factor = max(0.4, abs(yaw_diff) / 10.0)  # Scale from 40% to 100% (was 20%)
+            if abs(yaw_diff) < 3.0:  # Within 3° of yaw target (tighter deceleration zone)
+                yaw_decel_factor = max(0.6, abs(yaw_diff) / 3.0)  # Scale from 60% to 100% (higher minimum speed)
                 
-            if abs(pitch_diff) < 10.0:  # Within 10° of pitch target (was 20°) 
-                pitch_decel_factor = max(0.4, abs(pitch_diff) / 10.0)  # Scale from 40% to 100% (was 20%)
+            if abs(pitch_diff) < 3.0:  # Within 3° of pitch target (tighter deceleration zone) 
+                pitch_decel_factor = max(0.6, abs(pitch_diff) / 3.0)  # Scale from 60% to 100% (higher minimum speed)
                 
             # Apply deceleration
             yaw_speed = int(yaw_speed * yaw_decel_factor)
             pitch_speed = int(pitch_speed_raw * pitch_decel_factor)
+            
+            # MINIMUM SPEED: Prevent hunting with very small speeds
+            min_speed = 8  # Minimum speed to ensure movement
+            if abs(yaw_speed) > 0 and abs(yaw_speed) < min_speed:
+                yaw_speed = min_speed if yaw_speed > 0 else -min_speed
+            if abs(pitch_speed) > 0 and abs(pitch_speed) < min_speed:
+                pitch_speed = min_speed if pitch_speed > 0 else -min_speed
             
             # LIMIT PROTECTION: Reduce speed when approaching ±85° limits
             if current_pitch <= -85.0 and pitch_speed > 0:  # Approaching -90° limit
@@ -457,5 +464,5 @@ class SiyiGimbal:
             corrected_pitch = raw_pitch
             corrected_yaw_offset = raw_yaw
         
-        final_yaw = (corrected_yaw_offset + aircraft_heading + 180.0) % 360.0
+        final_yaw = (corrected_yaw_offset + aircraft_heading) % 360.0
         return corrected_pitch, final_yaw

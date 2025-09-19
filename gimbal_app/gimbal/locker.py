@@ -1,6 +1,7 @@
 from ..shared import *
 from ..calc.target_calculator import TargetCalculator
-from .siyi_gimbal import SiyiGimbal  
+from .siyi_gimbal import SiyiGimbal
+from ..session_logging.session_logger import get_session_logger  
 
 class GimbalLocker:
     """Gimbal lock system that continuously points gimbal at target coordinates"""
@@ -33,9 +34,33 @@ class GimbalLocker:
         # Log target setting
         self.gimbal.logger.log_target_set(target_lat, target_lon, target_alt, "gimbal_lock")
         
+    def start_position_lock(self):
+        """Start gimbal lock at current position - don't move, just hold position"""
+        if not self.gimbal.is_connected:
+            print("[GIMBAL LOCK] Cannot start position lock - gimbal not connected")
+            return False
+            
+        # Get current gimbal angles
+        current_yaw = self.gimbal.yaw_abs if self.gimbal.yaw_abs is not None else 0
+        current_pitch = self.gimbal.pitch_norm if self.gimbal.pitch_norm is not None else 0
+        
+        # Store current angles as target angles (don't calculate geographic target)
+        self.target_angles = {
+            'yaw': current_yaw,
+            'pitch': current_pitch
+        }
+        self.position_lock_mode = True  # Flag to use angle-based locking instead of geographic
+        self.active = True
+        self.last_update = 0  # Force immediate update
+        
+        print(f"[GIMBAL LOCK] Position lock started at Y:{current_yaw:.1f}° P:{current_pitch:.1f}°")
+        return True
+        
     def stop_locking(self):
         """Stop gimbal lock"""
         self.active = False
+        self.position_lock_mode = False
+        self.lock_start_time = 0  # Reset grace period timer
         
     def update_aircraft_state(self, aircraft_state: Dict[str, float]):
         """Update current aircraft position for gimbal calculations"""
@@ -55,7 +80,6 @@ class GimbalLocker:
                     self.aircraft_state and
                     self.target_lat is not None and
                     time.time() - self.last_update >= self.update_interval):
-                    
                     # Calculate required gimbal angles
                     angles = TargetCalculator.calculate_gimbal_angles(
                         self.aircraft_state['lat'], self.aircraft_state['lon'], 
@@ -98,10 +122,7 @@ class GimbalLocker:
                             self.gimbal.set_angle(required_yaw, required_pitch, speed=80)
                             self.last_commanded_pitch = required_pitch
                             self.last_commanded_yaw = required_yaw
-                        elif self.gimbal.is_connected and not should_update:
-                            # Stop movement when close to target
-                            self.gimbal.stop_movement()
-                            
+                        
                     self.last_update = time.time()
                     
                 # Log gimbal state every 2 seconds (less frequent to avoid spam)

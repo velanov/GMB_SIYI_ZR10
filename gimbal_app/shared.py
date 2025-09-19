@@ -1,7 +1,6 @@
 # Auto-refactor (exact) from gimbal_gps_ui_v2.py
 # All common imports + Config, SettingsStore, GimbalLogger + constants + utilities.
-import tkinter as tk
-from tkinter import ttk, messagebox
+# Removed tkinter imports - using PySide6 only
 import math, time, threading, json, os, logging
 from datetime import datetime
 from pymavlink import mavutil

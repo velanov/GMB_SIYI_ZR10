@@ -3,11 +3,11 @@
   <NetworkLinkControl>
     <Update/>
     <Camera>
-      <longitude>8.549608</longitude>
-      <latitude>47.4117734</latitude>
-      <altitude>182.396</altitude>
-      <heading>188.4615004620081</heading>
-      <tilt>64.9</tilt>
+      <longitude>8.5500766</longitude>
+      <latitude>47.4057473</latitude>
+      <altitude>541.217</altitude>
+      <heading>341.13657542822847</heading>
+      <tilt>29.799999999999997</tilt>
       <roll>0.0</roll>
       <altitudeMode>absolute</altitudeMode>
       <range>50</range>
@@ -16,11 +16,11 @@
       <duration>0.1</duration>
       <flyToMode>smooth</flyToMode>
       <Camera>
-        <longitude>8.549608</longitude>
-        <latitude>47.4117734</latitude>
-        <altitude>182.396</altitude>
-        <heading>188.4615004620081</heading>
-        <tilt>64.9</tilt>
+        <longitude>8.5500766</longitude>
+        <latitude>47.4057473</latitude>
+        <altitude>541.217</altitude>
+        <heading>341.13657542822847</heading>
+        <tilt>29.799999999999997</tilt>
         <roll>0.0</roll>
         <altitudeMode>absolute</altitudeMode>
         <range>50</range>
@@ -32,7 +32,7 @@
     <Style id="uav_style">
       <IconStyle>
         <scale>1.2</scale>
-        <heading>96.7615004620081</heading>
+        <heading>335.2365754282285</heading>
         <Icon>
           <href>http://maps.google.com/mapfiles/kml/shapes/airports.png</href>
         </Icon>
@@ -46,20 +46,20 @@
       <description>
         &lt;![CDATA[
         &lt;table border=&quot;1&quot; cellpadding=&quot;5&quot;&gt;
-        &lt;tr&gt;&lt;td&gt;Latitude:&lt;/td&gt;&lt;td&gt;47.411773°&lt;/td&gt;&lt;/tr&gt;
-        &lt;tr&gt;&lt;td&gt;Longitude:&lt;/td&gt;&lt;td&gt;8.549608°&lt;/td&gt;&lt;/tr&gt;
-        &lt;tr&gt;&lt;td&gt;Altitude:&lt;/td&gt;&lt;td&gt;182.4 m&lt;/td&gt;&lt;/tr&gt;
-        &lt;tr&gt;&lt;td&gt;Heading:&lt;/td&gt;&lt;td&gt;96.8°&lt;/td&gt;&lt;/tr&gt;
+        &lt;tr&gt;&lt;td&gt;Latitude:&lt;/td&gt;&lt;td&gt;47.405747°&lt;/td&gt;&lt;/tr&gt;
+        &lt;tr&gt;&lt;td&gt;Longitude:&lt;/td&gt;&lt;td&gt;8.550077°&lt;/td&gt;&lt;/tr&gt;
+        &lt;tr&gt;&lt;td&gt;Altitude:&lt;/td&gt;&lt;td&gt;541.2 m&lt;/td&gt;&lt;/tr&gt;
+        &lt;tr&gt;&lt;td&gt;Heading:&lt;/td&gt;&lt;td&gt;335.2°&lt;/td&gt;&lt;/tr&gt;
         &lt;tr&gt;&lt;td&gt;Speed:&lt;/td&gt;&lt;td&gt;0.0 m/s&lt;/td&gt;&lt;/tr&gt;
         &lt;tr&gt;&lt;td&gt;Flight Mode:&lt;/td&gt;&lt;td&gt;UNKNOWN&lt;/td&gt;&lt;/tr&gt;
         &lt;tr&gt;&lt;td&gt;Battery:&lt;/td&gt;&lt;td&gt;0.0 V&lt;/td&gt;&lt;/tr&gt;
-        &lt;tr&gt;&lt;td&gt;Updated:&lt;/td&gt;&lt;td&gt;19:51:37&lt;/td&gt;&lt;/tr&gt;
+        &lt;tr&gt;&lt;td&gt;Updated:&lt;/td&gt;&lt;td&gt;22:14:16&lt;/td&gt;&lt;/tr&gt;
         &lt;/table&gt;
         ]]&gt;
         </description>
       <styleUrl>#uav_style</styleUrl>
       <Point>
-        <coordinates>8.549608,47.4117734,182.396</coordinates>
+        <coordinates>8.5500766,47.4057473,541.217</coordinates>
         <altitudeMode>absolute</altitudeMode>
       </Point>
     </Placemark>
@@ -77,25 +77,25 @@
     <Placemark>
       <name>Camera View</name>
       <description>Gimbal viewing direction
-Yaw: 91.7°
-Pitch: -25.1°</description>
+Yaw: 5.9°
+Pitch: -60.2°</description>
       <styleUrl>#camera_view_style</styleUrl>
       <Polygon>
         <extrude>0</extrude>
         <altitudeMode>absolute</altitudeMode>
         <outerBoundaryIs>
           <LinearRing>
-            <coordinates>8.549608,47.4117734,182.396 8.554020567427203,47.40420650101853,0 8.54783945209023,47.403727071780644,0 8.542132019988061,47.405403345558284,0 8.549608,47.4117734,182.396</coordinates>
+            <coordinates>8.5500766,47.4057473,541.217 8.545108358373437,47.40868412114083,0 8.547943755197176,47.40997189939361,0 8.551350771302518,47.41012761953022,0 8.5500766,47.4057473,541.217</coordinates>
           </LinearRing>
         </outerBoundaryIs>
       </Polygon>
     </Placemark>
     <Camera>
-      <longitude>8.549608</longitude>
-      <latitude>47.4117734</latitude>
-      <altitude>184.396</altitude>
-      <heading>188.4615004620081</heading>
-      <tilt>64.9</tilt>
+      <longitude>8.5500766</longitude>
+      <latitude>47.4057473</latitude>
+      <altitude>543.217</altitude>
+      <heading>341.13657542822847</heading>
+      <tilt>29.799999999999997</tilt>
       <roll>0.0</roll>
       <altitudeMode>absolute</altitudeMode>
       <range>500</range>
