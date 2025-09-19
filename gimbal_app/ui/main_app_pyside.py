@@ -8,6 +8,7 @@ import sys
 import os
 import time
 import json
+import math
 from PySide6.QtWidgets import (
     QApplication, QMainWindow, QHBoxLayout, QVBoxLayout, QWidget, 
     QScrollArea, QGroupBox, QLabel, QPushButton, QComboBox, QSpinBox,
@@ -29,6 +30,7 @@ from gimbal_app.tracking.dynamic_tracker import DynamicTracker
 from gimbal_app.calc.target_calculator import TargetCalculator
 from gimbal_app.google_earth.controller import GoogleEarthController, GoogleEarthConfig
 from gimbal_app.google_earth.waypoint_manager import TrackingMode
+# Avoid circular import - import session logger only when needed
 
 
 class ModernGimbalApp(QMainWindow):
@@ -42,6 +44,12 @@ class ModernGimbalApp(QMainWindow):
         
         # Initialize backend systems (same as original)
         self.init_backend_systems()
+        
+        # Initialize session logging
+        # Import session logger to avoid circular import issues
+        from gimbal_app.session_logging.session_logger import get_session_logger
+        self.session_logger = get_session_logger()
+        print(f"[APP] Session logging initialized: {self.session_logger.session_id}")
         
         # Initialize camera stream placeholder
         self.camera_stream = None
@@ -74,6 +82,13 @@ class ModernGimbalApp(QMainWindow):
         self.tracker = DynamicTracker(self.mavlink)
         self.gimbal_locker = GimbalLocker(self.gimbal)
         
+        # Notification system
+        # self.notification_manager = NotificationManager()  # TODO: Implement NotificationManager
+        # self.notification_manager.add_notification_callback(self.display_notification)  # TODO: Implement
+        
+        # Track previous target for change notifications
+        self.previous_target_name = None
+        
         # Google Earth integration
         try:
             ge_config = GoogleEarthConfig()
@@ -94,8 +109,18 @@ class ModernGimbalApp(QMainWindow):
         
         self.gimbal_target_state = {
             'lat': None, 'lon': None, 'distance': 0.0,
-            'calculation_result': None
+            'calculation_result': None,
+            'selected': False  # Track if target was deliberately selected
         }
+        
+        # Current gimbal pointing (real-time, not for navigation)
+        self.gimbal_current_pointing = {
+            'lat': None, 'lon': None, 'distance': 0.0
+        }
+        
+        # Gimbal tracking state
+        self.gimbal_tracking_active = False
+        self.centering_active = False  # Track if centering is in progress
         
         self.fixed_target_state = {
             'lat': None, 'lon': None, 'alt': None
@@ -391,15 +416,69 @@ class ModernGimbalApp(QMainWindow):
         self.mode_stack = QWidget()
         self.mode_stack_layout = QVBoxLayout(self.mode_stack)
         
-        # Create mode-specific panels
-        self.create_fixed_coordinate_panel()
-        self.create_waypoint_mission_panel()
+        # Create mode-specific panels (moved to camera section where layout exists)
+        # self.create_gimbal_pointing_panel()  # Moved to camera setup
+        # self.create_fixed_coordinate_panel()  # Moved to camera setup
+        # self.create_waypoint_mission_panel()  # Moved to camera setup
         
         target_layout.addWidget(self.mode_stack)
         parent_layout.addWidget(target_group)
         
         # Set initial mode
         self.on_target_mode_changed("gimbal")
+    
+    def create_gimbal_pointing_panel(self):
+        """Create gimbal pointing control panel"""
+        self.gimbal_panel = QFrame()
+        self.gimbal_panel.setObjectName("modePanel")
+        gimbal_layout = QHBoxLayout(self.gimbal_panel)
+        
+        # Current pointing display (read-only)
+        gimbal_layout.addWidget(QLabel("Aiming:"))
+        self.lbl_current_pointing = QLabel("---.------, ---.------")
+        self.lbl_current_pointing.setObjectName("coordinateLabel") 
+        self.lbl_current_pointing.setMinimumWidth(180)
+        gimbal_layout.addWidget(self.lbl_current_pointing)
+        
+        # Start Target Tracking button
+        self.btn_start_gimbal_tracking = QPushButton("START TARGET TRACKING")
+        self.btn_start_gimbal_tracking.setObjectName("primaryButton")
+        self.btn_start_gimbal_tracking.setToolTip("Start loitering around current gimbal target")
+        self.btn_start_gimbal_tracking.clicked.connect(self.start_gimbal_tracking)
+        gimbal_layout.addWidget(self.btn_start_gimbal_tracking)
+        
+        # Stop Target Tracking button
+        self.btn_stop_gimbal_tracking = QPushButton("STOP TRACKING")
+        self.btn_stop_gimbal_tracking.setObjectName("actionButton")
+        self.btn_stop_gimbal_tracking.setToolTip("Unlock gimbal but continue loitering")
+        self.btn_stop_gimbal_tracking.clicked.connect(self.stop_gimbal_tracking)
+        self.btn_stop_gimbal_tracking.setEnabled(False)
+        gimbal_layout.addWidget(self.btn_stop_gimbal_tracking)
+        
+        # Select Target button
+        self.btn_select_target = QPushButton("SELECT TARGET")
+        self.btn_select_target.setObjectName("actionButton")
+        self.btn_select_target.setToolTip("Lock gimbal on current target")
+        self.btn_select_target.clicked.connect(self.select_gimbal_target)
+        gimbal_layout.addWidget(self.btn_select_target)
+        
+        # Clear target button  
+        self.btn_clear_target = QPushButton("CLEAR")
+        self.btn_clear_target.setObjectName("actionButton")
+        self.btn_clear_target.setToolTip("Clear selected target")
+        self.btn_clear_target.clicked.connect(self.clear_gimbal_target)
+        gimbal_layout.addWidget(self.btn_clear_target)
+        
+        # Selected target display
+        gimbal_layout.addWidget(QLabel("Target:"))
+        self.lbl_selected_target = QLabel("None selected")
+        self.lbl_selected_target.setObjectName("detailsLabel")
+        self.lbl_selected_target.setMinimumWidth(150)
+        gimbal_layout.addWidget(self.lbl_selected_target)
+        
+        # Add to mode controls frame
+        self.mode_controls_layout.addWidget(self.gimbal_panel)
+        self.gimbal_panel.hide()  # Initially hidden
     
     def create_fixed_coordinate_panel(self):
         """Create fixed coordinate input panel"""
@@ -647,6 +726,56 @@ class ModernGimbalApp(QMainWindow):
         status_layout.addWidget(self.compact_status)
         parent_layout.addWidget(status_group)
     
+    def display_notification(self, notification):
+        """Display notification in the UI - placeholder for compatibility"""
+        timestamp = notification['timestamp']
+        message = notification['message']
+        severity = notification['severity']
+        
+        # Military-style severity prefixes
+        severity_prefixes = {
+            'info': '[INFO]',
+            'success': '[CONFIRM]',
+            'warning': '[CAUTION]',
+            'alert': '[ALERT]',
+            'critical': '[PRIORITY]',
+            'error': '[ERROR]'
+        }
+        
+        prefix = severity_prefixes.get(severity, '[INFO]')
+        formatted_message = f"{timestamp} {prefix} {message}"
+        
+        # For now, just print to console (can be connected to UI element later)
+        print(f"[NOTIFICATION] {formatted_message}")
+    
+    def get_current_target_name(self):
+        """Get descriptive name for current target"""
+        if self.target_mode == "waypoint":
+            try:
+                if hasattr(self, 'waypoints_combo') and self.waypoints_combo.currentText():
+                    waypoint_name = self.waypoints_combo.currentText()
+                    return f"WP-{waypoint_name}"
+                else:
+                    return "WP-UNKNOWN"
+            except:
+                return "WP-UNKNOWN"
+        elif self.target_mode == "fixed":
+            if self.fixed_target_state.get('lat') and self.fixed_target_state.get('lon'):
+                lat = self.fixed_target_state['lat']
+                lon = self.fixed_target_state['lon']
+                return f"FIXED-{lat:.4f},{lon:.4f}"
+            else:
+                return "FIXED-UNSET"
+        elif self.target_mode == "gimbal":
+            if self.gimbal_target_state.get('lat') and self.gimbal_target_state.get('lon'):
+                lat = self.gimbal_target_state['lat']
+                lon = self.gimbal_target_state['lon']
+                return f"GIMBAL-{lat:.4f},{lon:.4f}"
+            else:
+                return "GIMBAL-UNSET"
+        else:
+            return "UNKNOWN"
+    
     def create_main_content(self):
         """Create main content area (for camera view)"""
         self.main_content = QFrame()
@@ -716,6 +845,7 @@ class ModernGimbalApp(QMainWindow):
         self.mode_controls_layout.setContentsMargins(10, 5, 10, 5)
         
         # Create mode-specific panels
+        self.create_gimbal_pointing_panel()
         self.create_fixed_coordinate_panel()
         self.create_waypoint_mission_panel()
         
@@ -1359,31 +1489,116 @@ class ModernGimbalApp(QMainWindow):
             if (self.aircraft_state and self.aircraft_state.get('lat') is not None and 
                 self.gimbal and self.gimbal.is_connected):
                 
+                # Debug logging for troubleshooting
+                print(f"[DEBUG] Calculating target - Aircraft: {self.aircraft_state.get('lat'):.6f}, {self.aircraft_state.get('lon'):.6f}, Gimbal connected: {self.gimbal.is_connected}")
+                
                 from ..calc.target_calculator import TargetCalculator
                 
                 # Get current aircraft and gimbal data
                 aircraft_lat = self.aircraft_state['lat']
                 aircraft_lon = self.aircraft_state['lon']
                 aircraft_alt_agl = self.aircraft_state.get('alt_agl', 0)
+                
                 gimbal_pitch = self.gimbal.pitch_norm or 0
                 gimbal_yaw = self.gimbal.yaw_abs or 0
                 
                 # Calculate where camera center is pointing
+                aircraft_heading = self.aircraft_state.get('heading', 0)
+                
+                # Log basic coordinates BEFORE 3D Euler transformations
+                basic_result = TargetCalculator.calculate_target_basic(
+                    aircraft_lat=aircraft_lat,
+                    aircraft_lon=aircraft_lon,
+                    aircraft_alt_agl=aircraft_alt_agl,
+                    pitch_deg=gimbal_pitch,
+                    yaw_deg=gimbal_yaw,
+                    aircraft_heading_deg=aircraft_heading
+                )
+                
+                # Calculate with full 3D transformations
                 target_result = TargetCalculator.calculate_target(
                     aircraft_lat=aircraft_lat,
                     aircraft_lon=aircraft_lon,
                     aircraft_alt_agl=aircraft_alt_agl,
                     pitch_deg=gimbal_pitch,
-                    yaw_deg=gimbal_yaw
+                    yaw_deg=gimbal_yaw,
+                    aircraft_yaw_deg=aircraft_heading
                 )
                 
+                # Log comparison between basic and 3D methods
+                if basic_result and target_result:
+                    basic_lat, basic_lon = basic_result['lat'], basic_result['lon']
+                    full_lat, full_lon = target_result['lat'], target_result['lon']
+                    
+                    # Calculate difference in meters
+                    lat_diff_m = (full_lat - basic_lat) * 111320.0
+                    lon_diff_m = (full_lon - basic_lon) * 111320.0 * math.cos(math.radians(aircraft_lat))
+                    total_diff_m = math.sqrt(lat_diff_m**2 + lon_diff_m**2)
+                    
+                    print(f"[COORD] BEFORE 3D: {basic_lat:.6f},{basic_lon:.6f} | AFTER 3D: {full_lat:.6f},{full_lon:.6f} | 3D IMPACT: {total_diff_m:.1f}m")
+                    
+                    # Log coordinate calculation to session logger
+                    self.session_logger.log_coordinate_calculation(
+                        aircraft_lat=aircraft_lat,
+                        aircraft_lon=aircraft_lon,
+                        aircraft_alt=aircraft_alt_agl,
+                        aircraft_heading=aircraft_heading,
+                        gimbal_pitch=gimbal_pitch,
+                        gimbal_yaw=gimbal_yaw,
+                        coord_before_lat=basic_lat,
+                        coord_before_lon=basic_lon,
+                        coord_after_lat=full_lat,
+                        coord_after_lon=full_lon,
+                        coordinate_diff_meters=total_diff_m,
+                        terrain_elevation=0.0  # TODO: Add terrain elevation if available
+                    )
+                
                 if target_result:
+                    # Update current pointing coordinates (real-time, not navigation target)
+                    self.gimbal_current_pointing['lat'] = target_result['lat']
+                    self.gimbal_current_pointing['lon'] = target_result['lon']
+                    self.gimbal_current_pointing['distance'] = target_result['distance']
+                    
+                    # Update gimbal panel display if in gimbal mode
+                    if (self.target_mode == "gimbal" and 
+                        hasattr(self, 'lbl_current_pointing')):
+                        lat = target_result['lat']
+                        lon = target_result['lon']
+                        self.lbl_current_pointing.setText(f"{lat:.6f}, {lon:.6f}")
+                        
+                        # Update gimbal target for ADSB display when in gimbal mode
+                        if self.target_mode == "gimbal":
+                            # Only update coordinates if target is not selected (locked)
+                            if not self.gimbal_target_state['selected']:
+                                self.gimbal_target_state['lat'] = lat
+                                self.gimbal_target_state['lon'] = lon
+                                self.gimbal_target_state['distance'] = target_result['distance']
+                            
+                            # Update display based on state
+                            if self.gimbal_target_state['selected']:
+                                # Show locked target coordinates (don't update from gimbal)
+                                locked_lat = self.gimbal_target_state['lat']
+                                locked_lon = self.gimbal_target_state['lon']
+                                self.lbl_selected_target.setText(f"Locked: {locked_lat:.6f}, {locked_lon:.6f}")
+                            elif hasattr(self, 'gimbal_tracking_active') and self.gimbal_tracking_active:
+                                self.lbl_selected_target.setText(f"Loitering: {lat:.6f}, {lon:.6f}")
+                            else:
+                                self.lbl_selected_target.setText(f"Aiming: {lat:.6f}, {lon:.6f}")
+                    
                     # Update GStreamer overlay with target coordinates
                     self.camera_stream.set_target_coordinates(
                         target_result['lat'],
                         target_result['lon'],
                         target_result['distance']
                     )
+            else:
+                # Debug why target calculation failed
+                if not self.aircraft_state or self.aircraft_state.get('lat') is None:
+                    print("[DEBUG] Target calculation skipped - no aircraft position")
+                elif not self.gimbal:
+                    print("[DEBUG] Target calculation skipped - no gimbal object")
+                elif not self.gimbal.is_connected:
+                    print("[DEBUG] Target calculation skipped - gimbal not connected")
                     
         except Exception as e:
             print(f"[UI] Error updating camera overlay: {e}")
@@ -1515,14 +1730,24 @@ class ModernGimbalApp(QMainWindow):
             self.fixed_panel.show()
             if hasattr(self, 'waypoint_panel'):
                 self.waypoint_panel.hide()
+            if hasattr(self, 'gimbal_panel'):
+                self.gimbal_panel.hide()
         elif mode_data == "waypoint":
             self.mode_controls_frame.show()
             if hasattr(self, 'waypoint_panel'):
                 self.waypoint_panel.show()
             if hasattr(self, 'fixed_panel'):
                 self.fixed_panel.hide()
+            if hasattr(self, 'gimbal_panel'):
+                self.gimbal_panel.hide()
         else:  # gimbal mode
-            self.mode_controls_frame.hide()
+            self.mode_controls_frame.show()
+            if hasattr(self, 'gimbal_panel'):
+                self.gimbal_panel.show()
+            if hasattr(self, 'fixed_panel'):
+                self.fixed_panel.hide()
+            if hasattr(self, 'waypoint_panel'):
+                self.waypoint_panel.hide()
     
     def get_current_target(self):
         """Get current target coordinates based on selected mode"""
@@ -1551,7 +1776,7 @@ class ModernGimbalApp(QMainWindow):
             else:
                 print("[TARGET] Google Earth controller not available")
         else:
-            # Gimbal mode
+            # Gimbal mode - always return current gimbal target for ADSB display
             if self.gimbal_target_state['lat'] is not None:
                 return (self.gimbal_target_state['lat'],
                         self.gimbal_target_state['lon'], 
@@ -1717,6 +1942,11 @@ class ModernGimbalApp(QMainWindow):
         if not self.gimbal.is_connected:
             return
             
+        # Stop centering if manual movement starts
+        if self.centering_active:
+            self.centering_active = False
+            print("[UI] Manual gimbal movement detected - stopping centering")
+            
         self.gimbal_movement["active"] = True
         self.gimbal_movement["yaw_speed"] = yaw_speed
         self.gimbal_movement["pitch_speed"] = pitch_speed
@@ -1769,12 +1999,35 @@ class ModernGimbalApp(QMainWindow):
     def move_gimbal(self, yaw_speed, pitch_speed):
         """Move gimbal with given speeds (legacy method)"""
         if self.gimbal.is_connected:
+            # Stop centering if manual movement detected
+            if self.centering_active and (yaw_speed != 0 or pitch_speed != 0):
+                self.centering_active = False
+                print("[UI] Manual gimbal jog detected - stopping centering")
             self.gimbal.jog(yaw_speed, pitch_speed)
+            
+            # Log manual gimbal control
+            if yaw_speed != 0 or pitch_speed != 0:  # Only log actual movement commands
+                try:
+                    current_pitch = self.gimbal.pitch_norm or 0
+                    current_yaw = self.gimbal.yaw_abs or 0
+                    # For manual control, we don't have specific target angles, so log current + speed
+                    self.session_logger.log_gimbal_performance(
+                        commanded_pitch=current_pitch,  # Current position as "commanded"
+                        commanded_yaw=current_yaw,
+                        actual_pitch=current_pitch,
+                        actual_yaw=current_yaw,
+                        gimbal_connected=self.gimbal.is_connected,
+                        operation_mode="manual"
+                    )
+                except Exception as e:
+                    print(f"[UI] Gimbal logging error: {e}")
     
     def center_gimbal(self):
         """Center the gimbal with aggressive centering"""
         if self.gimbal.is_connected:
             print("[UI] Starting aggressive gimbal centering...")
+            self.centering_active = True  # Set centering flag
+            
             # Try multiple centering approaches for better reliability
             
             # Method 1: Use built-in center command
@@ -1789,7 +2042,8 @@ class ModernGimbalApp(QMainWindow):
     
     def _force_center_position(self):
         """Force gimbal to center using movement commands"""
-        if not self.gimbal.is_connected:
+        if not self.gimbal.is_connected or not self.centering_active:
+            self.centering_active = False  # Clear flag if interrupted
             return
             
         print("[UI] Force centering with movement commands...")
@@ -1799,7 +2053,14 @@ class ModernGimbalApp(QMainWindow):
         current_pitch = self.gimbal.pitch_norm or 0
         
         # Calculate required movement to reach center (0° yaw, 0° pitch)
-        yaw_error = -current_yaw  # How much we need to move in yaw
+        # Use shortest path for yaw (handle 360° wraparound)
+        yaw_error = -current_yaw
+        # Fix wraparound: choose shortest path to 0°
+        if yaw_error > 180:
+            yaw_error -= 360
+        elif yaw_error < -180:
+            yaw_error += 360
+            
         pitch_error = -current_pitch  # How much we need to move in pitch
         
         print(f"[UI] Current: Yaw={current_yaw:.1f}°, Pitch={current_pitch:.1f}°")
@@ -1817,6 +2078,7 @@ class ModernGimbalApp(QMainWindow):
         else:
             # Close enough to center, stop movement
             self.gimbal.jog(0, 0)
+            self.centering_active = False  # Clear centering flag
             print("[UI] Gimbal centering completed")
     
     def request_gimbal_attitude(self):
@@ -1870,6 +2132,59 @@ class ModernGimbalApp(QMainWindow):
             
             if self.gimbal and self.gimbal.logger:
                 self.gimbal.logger.log_target_set(lat, lon, alt, "fixed_coordinates_ui")
+            
+            # Log fixed coordinate target selection
+            try:
+                if self.aircraft_state:
+                    aircraft_lat = self.aircraft_state['lat']
+                    aircraft_lon = self.aircraft_state['lon']
+                    aircraft_alt_agl = self.aircraft_state.get('alt_agl', 0)
+                    aircraft_heading = self.aircraft_state.get('heading', 0)
+                    
+                    # Calculate distance to target
+                    import math
+                    distance_2d = calculate_distance(aircraft_lat, aircraft_lon, lat, lon)
+                    
+                    self.session_logger.log_target_selection(
+                        target_lat=lat,
+                        target_lon=lon,
+                        target_alt=alt,
+                        aircraft_lat=aircraft_lat,
+                        aircraft_lon=aircraft_lon,
+                        aircraft_alt_agl=aircraft_alt_agl,
+                        aircraft_heading=aircraft_heading,
+                        gimbal_pitch=0.0,  # Fixed coordinates don't use gimbal
+                        gimbal_yaw=0.0,
+                        coord_before_euler_lat=lat,  # Fixed coordinates are direct input
+                        coord_before_euler_lon=lon,
+                        coord_after_euler_lat=lat,
+                        coord_after_euler_lon=lon,
+                        transformation_impact_meters=0.0,  # No transformation for manual input
+                        target_distance_2d=distance_2d,
+                        selection_mode="fixed_coordinate"
+                    )
+                else:
+                    # No aircraft state available
+                    self.session_logger.log_target_selection(
+                        target_lat=lat,
+                        target_lon=lon,
+                        target_alt=alt,
+                        aircraft_lat=0.0,
+                        aircraft_lon=0.0,
+                        aircraft_alt_agl=0.0,
+                        aircraft_heading=0.0,
+                        gimbal_pitch=0.0,
+                        gimbal_yaw=0.0,
+                        coord_before_euler_lat=lat,
+                        coord_before_euler_lon=lon,
+                        coord_after_euler_lat=lat,
+                        coord_after_euler_lon=lon,
+                        transformation_impact_meters=0.0,
+                        target_distance_2d=0.0,
+                        selection_mode="fixed_coordinate"
+                    )
+            except Exception as e:
+                print(f"[FIXED TARGET] Logging error: {e}")
                 
             print(f"Fixed target set to: {lat:.7f}, {lon:.7f}, {alt}m")
         except ValueError:
@@ -2270,6 +2585,229 @@ class ModernGimbalApp(QMainWindow):
         else:
             print("Failed to send single goto command")
     
+    def select_gimbal_target(self):
+        """Lock gimbal on current pointing position"""
+        if self.gimbal_current_pointing['lat'] is None:
+            print("Error: No gimbal pointing coordinates available")
+            return
+        
+        # Capture current gimbal pointing position and lock it
+        target_lat = self.gimbal_current_pointing['lat']
+        target_lon = self.gimbal_current_pointing['lon']
+        target_alt = 0.0  # Ground level for gimbal targets
+        
+        # Log target selection with coordinate comparison
+        print(f"\n{'='*60}")
+        print(f"[TARGET SELECT] Selected coordinates: {target_lat:.6f},{target_lon:.6f}")
+        
+        # Always show coordinate comparison when setting target
+        if self.aircraft_state:
+            aircraft_lat = self.aircraft_state['lat']
+            aircraft_lon = self.aircraft_state['lon']
+            aircraft_alt_agl = self.aircraft_state.get('alt_agl', 100)  # Default altitude if not available
+            aircraft_heading = self.aircraft_state.get('heading', 0)
+            
+            # Get gimbal angles (use current or defaults)
+            if self.gimbal.is_connected:
+                gimbal_pitch = self.gimbal.pitch_norm or 0
+                gimbal_yaw = self.gimbal.yaw_abs or 0
+                print(f"[TARGET SELECT] Current gimbal: Pitch={gimbal_pitch:.1f}° Yaw={gimbal_yaw:.1f}°")
+            else:
+                # Use some default angles for demonstration
+                gimbal_pitch = 30.0  # Looking down
+                gimbal_yaw = 0.0     # Straight ahead
+                print(f"[TARGET SELECT] Using default gimbal angles (gimbal not connected)")
+            
+            # Calculate what basic method would give
+            basic_coords = TargetCalculator.calculate_target_basic(
+                aircraft_lat, aircraft_lon, aircraft_alt_agl,
+                gimbal_pitch, gimbal_yaw, aircraft_heading
+            )
+            
+            if basic_coords:
+                print(f"[TARGET SELECT] BEFORE 3D: {basic_coords['lat']:.6f},{basic_coords['lon']:.6f}")
+                print(f"[TARGET SELECT] AFTER 3D:  {target_lat:.6f},{target_lon:.6f}")
+                
+                # Calculate difference in meters
+                lat_diff_m = (target_lat - basic_coords['lat']) * 111320.0
+                lon_diff_m = (target_lon - basic_coords['lon']) * 111320.0 * math.cos(math.radians(aircraft_lat))
+                total_diff_m = math.sqrt(lat_diff_m**2 + lon_diff_m**2)
+                
+                print(f"[TARGET SELECT] 3D CORRECTION IMPACT: {total_diff_m:.1f} meters")
+                print(f"[TARGET SELECT] Lat shift: {lat_diff_m:.1f}m, Lon shift: {lon_diff_m:.1f}m")
+                
+                # Log comprehensive target selection data to session logger
+                try:
+                    target_distance = self.gimbal_current_pointing.get('distance', 0.0)
+                    self.session_logger.log_target_selection(
+                        target_lat=target_lat,
+                        target_lon=target_lon,
+                        target_alt=target_alt,
+                        aircraft_lat=aircraft_lat,
+                        aircraft_lon=aircraft_lon,
+                        aircraft_alt_agl=aircraft_alt_agl,
+                        aircraft_heading=aircraft_heading,
+                        gimbal_pitch=gimbal_pitch,
+                        gimbal_yaw=gimbal_yaw,
+                        coord_before_euler_lat=basic_coords['lat'],
+                        coord_before_euler_lon=basic_coords['lon'],
+                        coord_after_euler_lat=target_lat,
+                        coord_after_euler_lon=target_lon,
+                        transformation_impact_meters=total_diff_m,
+                        target_distance_2d=target_distance,
+                        selection_mode="gimbal_pointing"
+                    )
+                except Exception as e:
+                    print(f"[TARGET SELECT] Logging error: {e}")
+            else:
+                print(f"[TARGET SELECT] Could not calculate basic coordinates for comparison")
+                
+                # Still log the target selection even without coordinate comparison
+                try:
+                    target_distance = self.gimbal_current_pointing.get('distance', 0.0)
+                    self.session_logger.log_target_selection(
+                        target_lat=target_lat,
+                        target_lon=target_lon,
+                        target_alt=target_alt,
+                        aircraft_lat=aircraft_lat,
+                        aircraft_lon=aircraft_lon,
+                        aircraft_alt_agl=aircraft_alt_agl,
+                        aircraft_heading=aircraft_heading,
+                        gimbal_pitch=gimbal_pitch,
+                        gimbal_yaw=gimbal_yaw,
+                        coord_before_euler_lat=0.0,  # No comparison available
+                        coord_before_euler_lon=0.0,
+                        coord_after_euler_lat=target_lat,
+                        coord_after_euler_lon=target_lon,
+                        transformation_impact_meters=0.0,
+                        target_distance_2d=target_distance,
+                        selection_mode="gimbal_pointing"
+                    )
+                except Exception as e:
+                    print(f"[TARGET SELECT] Logging error: {e}")
+        else:
+            print(f"[TARGET SELECT] No aircraft state available for coordinate comparison")
+            
+            # Still log basic target selection
+            try:
+                target_distance = self.gimbal_current_pointing.get('distance', 0.0)
+                self.session_logger.log_target_selection(
+                    target_lat=target_lat,
+                    target_lon=target_lon,
+                    target_alt=target_alt,
+                    aircraft_lat=0.0,  # No aircraft state
+                    aircraft_lon=0.0,
+                    aircraft_alt_agl=0.0,
+                    aircraft_heading=0.0,
+                    gimbal_pitch=0.0,
+                    gimbal_yaw=0.0,
+                    coord_before_euler_lat=0.0,
+                    coord_before_euler_lon=0.0,
+                    coord_after_euler_lat=target_lat,
+                    coord_after_euler_lon=target_lon,
+                    transformation_impact_meters=0.0,
+                    target_distance_2d=target_distance,
+                    selection_mode="gimbal_pointing"
+                )
+            except Exception as e:
+                print(f"[TARGET SELECT] Logging error: {e}")
+        
+        print(f"{'='*60}\n")
+        
+        # Set this as the locked target (freeze ADSB at this position)
+        self.gimbal_target_state['lat'] = target_lat
+        self.gimbal_target_state['lon'] = target_lon
+        self.gimbal_target_state['distance'] = self.gimbal_current_pointing['distance']
+        self.gimbal_target_state['selected'] = True
+        
+        # Start gimbal TARGET TRACKING (track ground target as aircraft moves)
+        if self.gimbal.is_connected:
+            # Update aircraft state for gimbal locker
+            if self.aircraft_state:
+                self.gimbal_locker.update_aircraft_state(self.aircraft_state)
+                print(f"[GIMBAL] Aircraft state: {self.aircraft_state.get('lat'):.6f}, {self.aircraft_state.get('lon'):.6f}, heading: {self.aircraft_state.get('heading', 0):.1f}°")
+            else:
+                print("[GIMBAL] Warning: No aircraft state available for gimbal locking")
+                return
+                
+            # Start tracking the ground target that gimbal is currently pointing at
+            self.gimbal_locker.start_locking(target_lat, target_lon, target_alt)
+            print(f"[GIMBAL] Target tracking started - ground target: {target_lat:.6f}, {target_lon:.6f}")
+            print(f"[GIMBAL] Gimbal will automatically move to keep target in view as aircraft moves")
+            
+        else:
+            print("[GIMBAL] Cannot lock - gimbal not connected")
+    
+    def clear_gimbal_target(self):
+        """Clear selected gimbal target and unlock gimbal"""
+        # Stop gimbal target tracking
+        self.gimbal_locker.stop_locking()
+        
+        # Clear target state
+        self.gimbal_target_state['lat'] = None
+        self.gimbal_target_state['lon'] = None
+        self.gimbal_target_state['distance'] = 0.0
+        self.gimbal_target_state['selected'] = False
+        
+        # Update UI display
+        self.lbl_selected_target.setText("None selected")
+        
+        print("[GIMBAL] Target cleared and gimbal unlocked")
+    
+    def start_gimbal_tracking(self):
+        """Start loitering around current gimbal target"""
+        if self.gimbal_target_state['lat'] is None:
+            print("[GIMBAL] Error: No target available for tracking")
+            return
+            
+        if not self.mavlink.connected:
+            print("[GIMBAL] Error: No MAVLink connection")
+            return
+        
+        # Get target coordinates
+        target_lat = self.gimbal_target_state['lat']
+        target_lon = self.gimbal_target_state['lon']
+        
+        # Get radius and altitude
+        radius = self.radius_spin.value() if hasattr(self, 'radius_spin') else 100
+        alt = self.aircraft_state.get('alt_amsl', 100.0)
+        
+        # Start loitering around target
+        success = self.mavlink.set_loiter_mode(target_lat, target_lon, alt, radius)
+        
+        if success:
+            self.gimbal_tracking_active = True
+            
+            # CRITICAL FIX: Start gimbal locking on the target
+            if self.gimbal.is_connected:
+                target_alt = self.gimbal_target_state.get('alt', 0.0)
+                self.gimbal_locker.start_locking(target_lat, target_lon, target_alt)
+                print(f"[GIMBAL] Started gimbal lock on target: {target_lat:.6f}, {target_lon:.6f} @ {target_alt}m")
+            else:
+                print("[GIMBAL] Warning: Gimbal not connected - only loitering without gimbal lock")
+            
+            # Update UI state
+            self.btn_start_gimbal_tracking.setEnabled(False)
+            self.btn_stop_gimbal_tracking.setEnabled(True)
+            
+            print(f"[GIMBAL] Started loitering around target: {target_lat:.6f}, {target_lon:.6f} @ {alt}m (R:{radius}m)")
+        else:
+            print("[GIMBAL] Failed to start loitering")
+    
+    def stop_gimbal_tracking(self):
+        """Unlock gimbal but continue loitering"""
+        self.gimbal_tracking_active = False
+        
+        # Stop gimbal lock but keep aircraft loitering
+        self.gimbal_locker.stop_locking()
+        self.gimbal_target_state['selected'] = False
+        
+        # Update UI state
+        self.btn_start_gimbal_tracking.setEnabled(True)
+        self.btn_stop_gimbal_tracking.setEnabled(False)
+        
+        print("[GIMBAL] Unlocked gimbal - aircraft continues loitering")
+    
     def return_to_mission(self):
         """Return to mission"""
         if not self.mavlink.connected:
@@ -2326,6 +2864,79 @@ class ModernGimbalApp(QMainWindow):
     def closeEvent(self, event):
         """Handle application close"""
         self._closing = True
+        
+        # Finalize session logging and trigger analysis
+        try:
+            print("[SHUTDOWN] Finalizing session...")
+            # Import to avoid circular import issues
+            from gimbal_app.session_logging.session_logger import finalize_current_session
+            session_dir = finalize_current_session()
+            if session_dir:
+                print(f"[SHUTDOWN] Session finalized: {session_dir}")
+                
+                # Check if session has data to analyze
+                import os
+                csv_files = [
+                    os.path.join(session_dir, "gimbal_performance.csv"),
+                    os.path.join(session_dir, "coordinate_calculations.csv"),
+                    os.path.join(session_dir, "target_selections.csv")
+                ]
+                
+                has_data = any(os.path.exists(f) and os.path.getsize(f) > 100 for f in csv_files)
+                
+                if has_data:
+                    print("[SHUTDOWN] Session has data, running analysis...")
+                    
+                    # Calculate correct script path
+                    current_file = os.path.abspath(__file__)
+                    gimbal_app_dir = os.path.dirname(os.path.dirname(current_file))
+                    analysis_script = os.path.join(gimbal_app_dir, "session_logging", "analyze_session.py")
+                    
+                    print(f"[SHUTDOWN] Analysis script path: {analysis_script}")
+                    print(f"[SHUTDOWN] Script exists: {os.path.exists(analysis_script)}")
+                    
+                    if os.path.exists(analysis_script):
+                        try:
+                            # Run analysis with visible output for debugging
+                            import subprocess
+                            print(f"[SHUTDOWN] Starting analysis for: {session_dir}")
+                            
+                            # Use Python from virtual environment
+                            project_root = os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
+                            venv_python = os.path.join(project_root, "venv", "bin", "python3")
+                            
+                            # Fallback to system python if venv not found
+                            if not os.path.exists(venv_python):
+                                venv_python = "python3"
+                            
+                            print(f"[SHUTDOWN] Using Python: {venv_python}")
+                            result = subprocess.run([
+                                venv_python, analysis_script, session_dir
+                            ], capture_output=True, text=True, timeout=30)
+                            
+                            if result.returncode == 0:
+                                print(f"[SHUTDOWN] Analysis completed successfully")
+                                if result.stdout:
+                                    print(f"[SHUTDOWN] Analysis output: {result.stdout}")
+                            else:
+                                print(f"[SHUTDOWN] Analysis failed with return code: {result.returncode}")
+                                if result.stderr:
+                                    print(f"[SHUTDOWN] Analysis error: {result.stderr}")
+                                    
+                        except subprocess.TimeoutExpired:
+                            print(f"[SHUTDOWN] Analysis timed out")
+                        except Exception as e:
+                            print(f"[SHUTDOWN] Failed to start analysis: {e}")
+                    else:
+                        print(f"[SHUTDOWN] Analysis script not found at: {analysis_script}")
+                else:
+                    print("[SHUTDOWN] No significant data in session, skipping analysis")
+            else:
+                print("[SHUTDOWN] No session to finalize")
+        except Exception as e:
+            print(f"[SHUTDOWN] Session finalization error: {e}")
+            import traceback
+            traceback.print_exc()
         
         # Stop camera stream first
         if self.camera_stream:
@@ -2435,6 +3046,10 @@ class ModernGimbalApp(QMainWindow):
                 # Start drag mode for left click
                 self.mouse_drag["active"] = True
                 self.mouse_drag["last_pos"] = mouse_pos
+                # Stop centering if manual control starts
+                if self.centering_active:
+                    self.centering_active = False
+                    print("[UI] Manual control detected - stopping centering")
                 event.accept()
             elif event.button() == Qt.MiddleButton:
                 # Center gimbal on middle mouse button (scroll wheel click)
