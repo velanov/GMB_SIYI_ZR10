@@ -60,11 +60,18 @@ class TargetCalculator:
         self.tolerance = tolerance_meters
     
     def _default_terrain_service(self):
-        """Default terrain service returning sea level."""
-        class DefaultTerrain:
-            def get_elevation(self, lat: float, lon: float) -> float:
-                return 0.0
-        return DefaultTerrain()
+        """Default terrain service using offline SRTM tiles."""
+        try:
+            from ..elevation import OfflineSRTMService
+            return OfflineSRTMService()
+        except ImportError as e:
+            print(f"[TERRAIN] Could not import offline SRTM service: {e}")
+            # Fallback to simple sea-level service
+            class FallbackTerrain:
+                def get_elevation(self, lat: float, lon: float) -> float:
+                    print(f"[TERRAIN] Using fallback sea-level for {lat:.6f}, {lon:.6f}")
+                    return 0.0
+            return FallbackTerrain()
     
     def calculate_target_3d(self, aircraft_lat: float, aircraft_lon: float, aircraft_alt_agl: float,
                            pitch_deg: float, yaw_deg: float, 
@@ -157,6 +164,7 @@ class TargetCalculator:
         return {
             'lat': target_lat,
             'lon': target_lon,
+            'alt': 0.0,  # Basic calculation assumes ground level
             'distance': horizontal_distance,
             'pitch': pitch_deg,
             'yaw': yaw_deg,
@@ -189,6 +197,7 @@ class TargetCalculator:
         return {
             'lat': target.lat, 
             'lon': target.lon, 
+            'alt': target.alt,  # Include the terrain-corrected altitude
             'distance': distance,
             'pitch': pitch_deg, 
             'yaw': yaw_deg,
@@ -380,8 +389,8 @@ class TargetCalculator:
                 # Fallback to sea level if terrain service fails
                 terrain_alt = 0.0
             
-            # Calculate ray altitude at this point
-            ray_alt = uav_position.alt - t * pointing_vector[2]
+            # FIXED: The ray altitude is already computed correctly in current_position.alt
+            ray_alt = current_position.alt
             
             # Check convergence
             error = abs(ray_alt - terrain_alt)

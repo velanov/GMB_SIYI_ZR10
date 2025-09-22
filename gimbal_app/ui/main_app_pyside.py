@@ -2594,7 +2594,16 @@ class ModernGimbalApp(QMainWindow):
         # Capture current gimbal pointing position and lock it
         target_lat = self.gimbal_current_pointing['lat']
         target_lon = self.gimbal_current_pointing['lon']
-        target_alt = 0.0  # Ground level for gimbal targets
+        
+        # Get real terrain elevation using SRTM data
+        try:
+            from ..elevation import OfflineSRTMService
+            srtm_service = OfflineSRTMService()
+            target_alt = srtm_service.get_elevation(target_lat, target_lon)
+            print(f"[TARGET SELECT] Using SRTM elevation: {target_alt:.1f}m")
+        except ImportError:
+            target_alt = 0.0  # Fallback to ground level
+            print(f"[TARGET SELECT] SRTM not available, using ground level")
         
         # Log target selection with coordinate comparison
         print(f"\n{'='*60}")
