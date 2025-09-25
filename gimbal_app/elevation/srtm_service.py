@@ -29,7 +29,7 @@ class OfflineSRTMService:
             self.data_dir = data_dir
         
         self.tile_cache = {}  # Cache for loaded tiles
-        self.tile_size = 1201  # SRTM3 tile size (1 arc-second resolution)
+        self.tile_size = 3601  # SRTM1 tile size (1 arc-second resolution)
         
         # Scan for available tiles
         self.available_tiles = self._scan_available_tiles()
@@ -120,7 +120,7 @@ class OfflineSRTMService:
             lat_frac = lat - lat_int
             lon_frac = lon - lon_int
             
-            # Convert to pixel coordinates (0-1200 for SRTM3)
+            # Convert to pixel coordinates (0-3600 for SRTM1)
             # Note: SRTM data is stored with (0,0) at top-left (north-west corner)
             row = int((1.0 - lat_frac) * (self.tile_size - 1))  # Flip Y axis
             col = int(lon_frac * (self.tile_size - 1))
