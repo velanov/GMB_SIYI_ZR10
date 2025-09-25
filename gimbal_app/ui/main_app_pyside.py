@@ -2655,42 +2655,65 @@ class ModernGimbalApp(QMainWindow):
                 gimbal_yaw = 0.0     # Straight ahead
                 print(f"[TARGET SELECT] Using default gimbal angles (gimbal not connected)")
             
-            # Calculate what basic method would give
+            # Calculate full 3D target with ray-terrain intersection
+            calculator = TargetCalculator()
+            full_3d_result = calculator.calculate_target_3d(
+                aircraft_lat, aircraft_lon, aircraft_alt_agl,
+                gimbal_pitch, gimbal_yaw, aircraft_yaw_deg=aircraft_heading
+            )
+            
+            # Extract raw estimate and terrain-corrected final coordinates
+            raw_estimate = full_3d_result.raw_estimate
+            terrain_corrected = full_3d_result.target_position or full_3d_result.raw_estimate
+            terrain_elevation = calculator.terrain_service.get_elevation(terrain_corrected.lat, terrain_corrected.lon)
+            
+            # Calculate what basic method would give for comparison
             basic_coords = TargetCalculator.calculate_target_basic(
                 aircraft_lat, aircraft_lon, aircraft_alt_agl,
                 gimbal_pitch, gimbal_yaw, aircraft_heading
             )
             
-            if basic_coords:
-                print(f"[TARGET SELECT] BEFORE 3D: {basic_coords['lat']:.6f},{basic_coords['lon']:.6f}")
-                print(f"[TARGET SELECT] AFTER 3D:  {target_lat:.6f},{target_lon:.6f}")
+            if basic_coords and raw_estimate:
+                print(f"[TARGET SELECT] BASIC METHOD: {basic_coords['lat']:.6f},{basic_coords['lon']:.6f}")
+                print(f"[TARGET SELECT] RAW ESTIMATE: {raw_estimate.lat:.6f},{raw_estimate.lon:.6f}")
+                print(f"[TARGET SELECT] TERRAIN CORRECTED: {terrain_corrected.lat:.6f},{terrain_corrected.lon:.6f}")
+                print(f"[TARGET SELECT] TERRAIN ELEVATION: {terrain_elevation:.1f}m")
                 
-                # Calculate difference in meters
-                lat_diff_m = (target_lat - basic_coords['lat']) * 111320.0
-                lon_diff_m = (target_lon - basic_coords['lon']) * 111320.0 * math.cos(math.radians(aircraft_lat))
-                total_diff_m = math.sqrt(lat_diff_m**2 + lon_diff_m**2)
+                # Calculate ray intersection terrain correction impact
+                terrain_lat_diff_m = (terrain_corrected.lat - raw_estimate.lat) * 111320.0
+                terrain_lon_diff_m = (terrain_corrected.lon - raw_estimate.lon) * 111320.0 * math.cos(math.radians(aircraft_lat))
+                terrain_correction_impact = math.sqrt(terrain_lat_diff_m**2 + terrain_lon_diff_m**2)
                 
-                print(f"[TARGET SELECT] 3D CORRECTION IMPACT: {total_diff_m:.1f} meters")
-                print(f"[TARGET SELECT] Lat shift: {lat_diff_m:.1f}m, Lon shift: {lon_diff_m:.1f}m")
+                # Calculate total difference from basic to final
+                total_lat_diff_m = (terrain_corrected.lat - basic_coords['lat']) * 111320.0
+                total_lon_diff_m = (terrain_corrected.lon - basic_coords['lon']) * 111320.0 * math.cos(math.radians(aircraft_lat))
+                total_diff_m = math.sqrt(total_lat_diff_m**2 + total_lon_diff_m**2)
                 
-                # Log comprehensive target selection data to session logger
+                print(f"[TARGET SELECT] TERRAIN CORRECTION IMPACT: {terrain_correction_impact:.1f}m (Raw → Terrain)")
+                print(f"[TARGET SELECT] TOTAL 3D IMPACT: {total_diff_m:.1f}m (Basic → Final)")
+                print(f"[TARGET SELECT] ALGORITHM: {'Converged' if full_3d_result.converged else 'Raw'} in {full_3d_result.iterations} iterations, error: {full_3d_result.final_error:.3f}m")
+                
+                # Log comprehensive target selection data to session logger with ray intersection data
                 try:
-                    target_distance = self.gimbal_current_pointing.get('distance', 0.0)
+                    target_distance = calculator._distance_2d(
+                        Position(aircraft_lat, aircraft_lon, aircraft_alt_agl), 
+                        terrain_corrected
+                    )
                     self.session_logger.log_target_selection(
-                        target_lat=target_lat,
-                        target_lon=target_lon,
-                        target_alt=target_alt,
+                        target_lat=terrain_corrected.lat,  # Use terrain-corrected final position
+                        target_lon=terrain_corrected.lon,
+                        target_alt=terrain_corrected.alt,
                         aircraft_lat=aircraft_lat,
                         aircraft_lon=aircraft_lon,
                         aircraft_alt_agl=aircraft_alt_agl,
                         aircraft_heading=aircraft_heading,
                         gimbal_pitch=gimbal_pitch,
                         gimbal_yaw=gimbal_yaw,
-                        coord_before_euler_lat=basic_coords['lat'],
-                        coord_before_euler_lon=basic_coords['lon'],
-                        coord_after_euler_lat=target_lat,
-                        coord_after_euler_lon=target_lon,
-                        transformation_impact_meters=total_diff_m,
+                        coord_before_euler_lat=raw_estimate.lat,  # Raw estimate (before terrain correction)
+                        coord_before_euler_lon=raw_estimate.lon,
+                        coord_after_euler_lat=terrain_corrected.lat,  # Terrain-corrected final coordinates
+                        coord_after_euler_lon=terrain_corrected.lon,
+                        transformation_impact_meters=terrain_correction_impact,  # Impact of terrain correction
                         target_distance_2d=target_distance,
                         selection_mode="gimbal_pointing"
                     )

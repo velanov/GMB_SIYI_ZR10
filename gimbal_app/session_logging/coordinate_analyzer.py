@@ -391,8 +391,19 @@ class CoordinateAnalyzer:
                 f.write(f"{timestamp} | {row['selection_mode'].upper()}\n")
                 f.write(f"  Target: {row['target_lat']:.6f},{row['target_lon']:.6f} @ {row['target_alt']:.1f}m\n")
                 f.write(f"  Aircraft: {row['aircraft_lat']:.6f},{row['aircraft_lon']:.6f} @ {row['aircraft_alt_agl']:.1f}m AGL\n")
-                if row['transformation_impact_meters'] > 0:
-                    f.write(f"  3D Impact: {row['transformation_impact_meters']:.2f}m\n")
+                
+                # Show ray intersection analysis if available
+                if (row['coord_before_euler_lat'] != row['coord_after_euler_lat'] or 
+                    row['coord_before_euler_lon'] != row['coord_after_euler_lon']):
+                    f.write(f"  Raw Estimate: {row['coord_before_euler_lat']:.6f},{row['coord_before_euler_lon']:.6f}\n")
+                    f.write(f"  Terrain Corrected: {row['coord_after_euler_lat']:.6f},{row['coord_after_euler_lon']:.6f}\n")
+                    if row['transformation_impact_meters'] > 0:
+                        f.write(f"  Terrain Impact: {row['transformation_impact_meters']:.2f}m\n")
+                else:
+                    # Fallback for manual coordinate entry or no terrain correction
+                    if row['transformation_impact_meters'] > 0:
+                        f.write(f"  3D Impact: {row['transformation_impact_meters']:.2f}m\n")
+                
                 f.write(f"  Distance: {row['target_distance_2d']:.1f}m\n")
                 f.write("\n")
         
