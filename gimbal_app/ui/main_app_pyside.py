@@ -27,7 +27,7 @@ from gimbal_app.gimbal.camera_stream import SiyiCameraStream
 from gimbal_app.mavlink.handler import MAVLinkHandler
 from gimbal_app.adsb.sbs_publisher import SBSPublisher
 from gimbal_app.tracking.dynamic_tracker import DynamicTracker
-from gimbal_app.calc.target_calculator import TargetCalculator
+from gimbal_app.calc.target_calculator import TargetCalculator, Position
 from gimbal_app.google_earth.controller import GoogleEarthController, GoogleEarthConfig
 from gimbal_app.google_earth.waypoint_manager import TrackingMode
 # Avoid circular import - import session logger only when needed
@@ -1515,8 +1515,9 @@ class ModernGimbalApp(QMainWindow):
                     aircraft_heading_deg=aircraft_heading
                 )
                 
-                # Calculate with full 3D transformations
-                target_result = TargetCalculator.calculate_target(
+                # Calculate with full 3D transformations and terrain correction
+                calculator = TargetCalculator()
+                full_3d_result = calculator.calculate_target_3d(
                     aircraft_lat=aircraft_lat,
                     aircraft_lon=aircraft_lon,
                     aircraft_alt_agl=aircraft_alt_agl,
@@ -1525,19 +1526,46 @@ class ModernGimbalApp(QMainWindow):
                     aircraft_yaw_deg=aircraft_heading
                 )
                 
-                # Log comparison between basic and 3D methods
-                if basic_result and target_result:
+                # Extract both raw estimate and terrain-corrected final result
+                raw_estimate = full_3d_result.raw_estimate
+                final_target = full_3d_result.target_position or full_3d_result.raw_estimate
+                terrain_elevation = calculator.terrain_service.get_elevation(final_target.lat, final_target.lon)
+                
+                # Create legacy format for compatibility
+                target_result = {
+                    'lat': final_target.lat,
+                    'lon': final_target.lon,
+                    'alt': final_target.alt,
+                    'distance': calculator._distance_2d(Position(aircraft_lat, aircraft_lon, aircraft_alt_agl), final_target),
+                    'pitch': gimbal_pitch,
+                    'yaw': gimbal_yaw,
+                    'note': f"3D-Corrected ({'Converged' if full_3d_result.converged else 'Raw'})",
+                    'iterations': full_3d_result.iterations,
+                    'error_m': full_3d_result.final_error,
+                    'processing_time_ms': full_3d_result.processing_time * 1000
+                }
+                
+                # Log comparison between ray intersection methods
+                if basic_result and target_result and raw_estimate:
                     basic_lat, basic_lon = basic_result['lat'], basic_result['lon']
-                    full_lat, full_lon = target_result['lat'], target_result['lon']
+                    raw_lat, raw_lon = raw_estimate.lat, raw_estimate.lon
+                    final_lat, final_lon = target_result['lat'], target_result['lon']
                     
-                    # Calculate difference in meters
-                    lat_diff_m = (full_lat - basic_lat) * 111320.0
-                    lon_diff_m = (full_lon - basic_lon) * 111320.0 * math.cos(math.radians(aircraft_lat))
-                    total_diff_m = math.sqrt(lat_diff_m**2 + lon_diff_m**2)
+                    # Calculate terrain correction impact in meters
+                    terrain_lat_diff_m = (final_lat - raw_lat) * 111320.0
+                    terrain_lon_diff_m = (final_lon - raw_lon) * 111320.0 * math.cos(math.radians(aircraft_lat))
+                    terrain_correction_m = math.sqrt(terrain_lat_diff_m**2 + terrain_lon_diff_m**2)
                     
-                    print(f"[COORD] BEFORE 3D: {basic_lat:.6f},{basic_lon:.6f} | AFTER 3D: {full_lat:.6f},{full_lon:.6f} | 3D IMPACT: {total_diff_m:.1f}m")
+                    # Calculate total 3D transformation impact (basic vs terrain-corrected)
+                    total_lat_diff_m = (final_lat - basic_lat) * 111320.0
+                    total_lon_diff_m = (final_lon - basic_lon) * 111320.0 * math.cos(math.radians(aircraft_lat))
+                    total_3d_impact_m = math.sqrt(total_lat_diff_m**2 + total_lon_diff_m**2)
                     
-                    # Log coordinate calculation to session logger
+                    print(f"[RAY INTERSECTION] RAW: {raw_lat:.6f},{raw_lon:.6f} | TERRAIN CORRECTED: {final_lat:.6f},{final_lon:.6f} | TERRAIN IMPACT: {terrain_correction_m:.1f}m")
+                    print(f"[COORD] BASIC: {basic_lat:.6f},{basic_lon:.6f} | FINAL: {final_lat:.6f},{final_lon:.6f} | TOTAL 3D IMPACT: {total_3d_impact_m:.1f}m")
+                    print(f"[TERRAIN] Elevation: {terrain_elevation:.1f}m | Iterations: {full_3d_result.iterations} | Error: {full_3d_result.final_error:.3f}m")
+                    
+                    # Log coordinate calculation to session logger with actual terrain data
                     self.session_logger.log_coordinate_calculation(
                         aircraft_lat=aircraft_lat,
                         aircraft_lon=aircraft_lon,
@@ -1545,12 +1573,12 @@ class ModernGimbalApp(QMainWindow):
                         aircraft_heading=aircraft_heading,
                         gimbal_pitch=gimbal_pitch,
                         gimbal_yaw=gimbal_yaw,
-                        coord_before_lat=basic_lat,
-                        coord_before_lon=basic_lon,
-                        coord_after_lat=full_lat,
-                        coord_after_lon=full_lon,
-                        coordinate_diff_meters=total_diff_m,
-                        terrain_elevation=0.0  # TODO: Add terrain elevation if available
+                        coord_before_lat=raw_lat,  # Raw estimate before terrain correction
+                        coord_before_lon=raw_lon,
+                        coord_after_lat=final_lat,  # Final terrain-corrected coordinates
+                        coord_after_lon=final_lon,
+                        coordinate_diff_meters=terrain_correction_m,  # Impact of terrain correction
+                        terrain_elevation=terrain_elevation
                     )
                 
                 if target_result:
