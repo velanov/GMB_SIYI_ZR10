@@ -89,6 +89,13 @@ class ModernGimbalApp(QMainWindow):
         # Track previous target for change notifications
         self.previous_target_name = None
         
+        # Controller integration
+        from ..controller import ControllerManager
+        self.controller_manager = ControllerManager(
+            self.gimbal, 
+            lambda: getattr(self, 'gimbal_target_state', {})
+        )
+        
         # Google Earth integration
         try:
             ge_config = GoogleEarthConfig()
@@ -252,11 +259,14 @@ class ModernGimbalApp(QMainWindow):
         self.lbl_gimbal_status.setObjectName("statusLabel")
         self.lbl_gimbal_details = QLabel("Mount: — | Mode: —")
         self.lbl_gimbal_details.setObjectName("detailsLabel")
+        self.lbl_controller_status = QLabel("Controller: Initializing...")
+        self.lbl_controller_status.setObjectName("detailsLabel")
         
         gimbal_layout.addWidget(gimbal_title)
         gimbal_layout.addWidget(self.chk_gimbal_connect)
         gimbal_layout.addWidget(self.lbl_gimbal_status)
         gimbal_layout.addWidget(self.lbl_gimbal_details)
+        gimbal_layout.addWidget(self.lbl_controller_status)
         
         # System Controls
         controls_frame = QFrame()
@@ -1511,8 +1521,7 @@ class ModernGimbalApp(QMainWindow):
                     aircraft_lon=aircraft_lon,
                     aircraft_alt_agl=aircraft_alt_agl,
                     pitch_deg=gimbal_pitch,
-                    yaw_deg=gimbal_yaw,
-                    aircraft_heading_deg=aircraft_heading
+                    yaw_deg=gimbal_yaw
                 )
                 
                 # Calculate with full 3D transformations and terrain correction
@@ -1649,6 +1658,10 @@ class ModernGimbalApp(QMainWindow):
     
     def update_displays(self):
         """Update all display elements"""
+        # Update controller input
+        if hasattr(self, 'controller_manager'):
+            self.controller_manager.update()
+        
         # Update MAVLink status
         if self.mavlink.connected:
             self.lbl_mavlink_status.setText("CONNECTED")
@@ -1680,6 +1693,10 @@ class ModernGimbalApp(QMainWindow):
             self.lbl_gimbal_status.setText(f"DISCONNECTED\n{Config.SIYI_IP}:{Config.SIYI_PORT}")
             self.lbl_gimbal_status.setStyleSheet("color: #ff0000;")
             self.lbl_gimbal_details.setText("Auto-reconnecting...")
+        
+        # Update controller status
+        if hasattr(self, 'controller_manager'):
+            self.lbl_controller_status.setText(self.controller_manager.get_status())
         
         # Update target display
         self.update_target_display()
@@ -2658,8 +2675,12 @@ class ModernGimbalApp(QMainWindow):
             # Calculate full 3D target with ray-terrain intersection
             calculator = TargetCalculator()
             full_3d_result = calculator.calculate_target_3d(
-                aircraft_lat, aircraft_lon, aircraft_alt_agl,
-                gimbal_pitch, gimbal_yaw, aircraft_yaw_deg=aircraft_heading
+                aircraft_lat=aircraft_lat,
+                aircraft_lon=aircraft_lon,
+                aircraft_alt_agl=aircraft_alt_agl,
+                pitch_deg=gimbal_pitch,
+                yaw_deg=gimbal_yaw,
+                aircraft_heading_deg=aircraft_heading
             )
             
             # Extract raw estimate and terrain-corrected final coordinates
@@ -2669,8 +2690,12 @@ class ModernGimbalApp(QMainWindow):
             
             # Calculate what basic method would give for comparison
             basic_coords = TargetCalculator.calculate_target_basic(
-                aircraft_lat, aircraft_lon, aircraft_alt_agl,
-                gimbal_pitch, gimbal_yaw, aircraft_heading
+                aircraft_lat=aircraft_lat,
+                aircraft_lon=aircraft_lon,
+                aircraft_alt_agl=aircraft_alt_agl,
+                pitch_deg=gimbal_pitch,
+                yaw_deg=gimbal_yaw,
+                aircraft_heading_deg=aircraft_heading
             )
             
             if basic_coords and raw_estimate:
@@ -2868,6 +2893,154 @@ class ModernGimbalApp(QMainWindow):
         
         print("[GIMBAL] Unlocked gimbal - aircraft continues loitering")
     
+    def start_tracking(self):
+        """Combined method: Select target and start tracking"""
+        # First execute select_gimbal_target logic
+        if self.gimbal_current_pointing['lat'] is None:
+            print("Error: No gimbal pointing coordinates available")
+            return
+        
+        # Capture current gimbal pointing position and lock it
+        target_lat = self.gimbal_current_pointing['lat']
+        target_lon = self.gimbal_current_pointing['lon']
+        
+        # Get real terrain elevation using SRTM data
+        try:
+            from ..elevation import OfflineSRTMService
+            srtm_service = OfflineSRTMService()
+            target_alt = srtm_service.get_elevation(target_lat, target_lon)
+            print(f"[TARGET SELECT] Using SRTM elevation: {target_alt:.1f}m")
+        except ImportError:
+            target_alt = 0.0  # Fallback to ground level
+            print(f"[TARGET SELECT] SRTM not available, using ground level")
+        
+        # Log target selection with coordinate comparison
+        print(f"\n{'='*60}")
+        print(f"[TARGET SELECT] Selected coordinates: {target_lat:.6f},{target_lon:.6f}")
+        
+        # Always show coordinate comparison when setting target
+        if self.aircraft_state:
+            aircraft_lat = self.aircraft_state['lat']
+            aircraft_lon = self.aircraft_state['lon']
+            aircraft_alt_agl = self.aircraft_state.get('alt_agl', 100)  # Default altitude if not available
+            aircraft_heading = self.aircraft_state.get('heading', 0)
+            
+            # Get gimbal angles (use current or defaults)
+            if self.gimbal.is_connected:
+                gimbal_pitch = self.gimbal.pitch_norm or 0
+                gimbal_yaw = self.gimbal.yaw_abs or 0
+                print(f"[TARGET SELECT] Current gimbal: Pitch={gimbal_pitch:.1f}° Yaw={gimbal_yaw:.1f}°")
+            else:
+                # Use some default angles for demonstration
+                gimbal_pitch = 30.0  # Looking down
+                gimbal_yaw = 0.0     # Straight ahead
+                print(f"[TARGET SELECT] Using default gimbal angles (gimbal not connected)")
+            
+            # Calculate full 3D target with ray-terrain intersection
+            calculator = TargetCalculator()
+            full_3d_result = calculator.calculate_target_3d(
+                aircraft_lat=aircraft_lat,
+                aircraft_lon=aircraft_lon,
+                aircraft_alt_agl=aircraft_alt_agl,
+                pitch_deg=gimbal_pitch,
+                yaw_deg=gimbal_yaw,
+                aircraft_heading_deg=aircraft_heading
+            )
+            
+            # Extract raw estimate and terrain-corrected final coordinates
+            raw_estimate = full_3d_result.raw_estimate
+            terrain_corrected = full_3d_result.target_position or full_3d_result.raw_estimate
+            terrain_elevation = calculator.terrain_service.get_elevation(terrain_corrected.lat, terrain_corrected.lon)
+            
+            # Calculate what basic method would give for comparison
+            basic_coords = TargetCalculator.calculate_target_basic(
+                aircraft_lat=aircraft_lat,
+                aircraft_lon=aircraft_lon,
+                aircraft_alt_agl=aircraft_alt_agl,
+                pitch_deg=gimbal_pitch,
+                yaw_deg=gimbal_yaw,
+                aircraft_heading_deg=aircraft_heading
+            )
+            
+            print(f"[COORD COMPARISON] Aircraft: {aircraft_lat:.6f},{aircraft_lon:.6f} @ {aircraft_alt_agl:.0f}m AGL")
+            print(f"[COORD COMPARISON] Basic calculation: {basic_coords[0]:.6f},{basic_coords[1]:.6f}")
+            print(f"[COORD COMPARISON] Raw 3D estimate: {raw_estimate.lat:.6f},{raw_estimate.lon:.6f} @ {raw_estimate.alt:.1f}m")
+            print(f"[COORD COMPARISON] Terrain corrected: {terrain_corrected.lat:.6f},{terrain_corrected.lon:.6f} @ {terrain_elevation:.1f}m")
+            print(f"[COORD COMPARISON] Selected (UI): {target_lat:.6f},{target_lon:.6f} @ {target_alt:.1f}m")
+            print(f"{'='*60}")
+        
+        # Set this as the locked target (freeze ADSB at this position)
+        self.gimbal_target_state['lat'] = target_lat
+        self.gimbal_target_state['lon'] = target_lon
+        self.gimbal_target_state['distance'] = self.gimbal_current_pointing['distance']
+        self.gimbal_target_state['selected'] = True
+        
+        # Start gimbal TARGET TRACKING (track ground target as aircraft moves)
+        if self.gimbal.is_connected:
+            # Start tracking the ground target that gimbal is currently pointing at
+            self.gimbal_locker.start_locking(target_lat, target_lon, target_alt)
+            print(f"[GIMBAL] Target tracking started - ground target: {target_lat:.6f}, {target_lon:.6f}")
+            print(f"[GIMBAL] Gimbal will automatically move to keep target in view as aircraft moves")
+            
+        else:
+            print("[GIMBAL] Cannot lock - gimbal not connected")
+        
+        # Now execute start_gimbal_tracking logic
+        if not self.mavlink.connected:
+            print("[GIMBAL] Error: No MAVLink connection")
+            return
+        
+        # Get radius and altitude
+        radius = self.radius_spin.value() if hasattr(self, 'radius_spin') else 100
+        alt = self.aircraft_state.get('alt_amsl', 100.0)
+        
+        # Start loitering around target
+        success = self.mavlink.set_loiter_mode(target_lat, target_lon, alt, radius)
+        
+        if success:
+            self.gimbal_tracking_active = True
+            
+            # CRITICAL FIX: Start gimbal locking on the target (already done above)
+            if self.gimbal.is_connected:
+                print(f"[GIMBAL] Gimbal lock already active on target: {target_lat:.6f}, {target_lon:.6f} @ {target_alt}m")
+            else:
+                print("[GIMBAL] Warning: Gimbal not connected - only loitering without gimbal lock")
+            
+            # Update UI state for simplified 2-button system
+            self.btn_start_tracking.setEnabled(False)
+            self.btn_stop_clear.setEnabled(True)
+            
+            print(f"[GIMBAL] Started loitering around target: {target_lat:.6f}, {target_lon:.6f} @ {alt}m (R:{radius}m)")
+        else:
+            print("[GIMBAL] Failed to start loitering")
+    
+    def stop_and_clear(self):
+        """Combined method: Stop tracking and clear target"""
+        # First execute stop_gimbal_tracking logic
+        self.gimbal_tracking_active = False
+        
+        # Stop gimbal lock but keep aircraft loitering
+        self.gimbal_locker.stop_locking()
+        self.gimbal_target_state['selected'] = False
+        
+        print("[GIMBAL] Unlocked gimbal - aircraft continues loitering")
+        
+        # Then execute clear_gimbal_target logic
+        # Clear target state
+        self.gimbal_target_state['lat'] = None
+        self.gimbal_target_state['lon'] = None
+        self.gimbal_target_state['distance'] = 0.0
+        self.gimbal_target_state['selected'] = False
+        
+        # Update UI display
+        self.lbl_selected_target.setText("None selected")
+        
+        # Update UI state for simplified 2-button system
+        self.btn_start_tracking.setEnabled(True)
+        self.btn_stop_clear.setEnabled(False)
+        
+        print("[GIMBAL] Target cleared and gimbal unlocked")
+    
     def return_to_mission(self):
         """Return to mission"""
         if not self.mavlink.connected:
@@ -3026,6 +3199,11 @@ class ModernGimbalApp(QMainWindow):
         if self.google_earth:
             print("[SHUTDOWN] Cleaning up Google Earth...")
             self.google_earth.cleanup()
+        
+        # Cleanup controller
+        if hasattr(self, 'controller_manager'):
+            print("[SHUTDOWN] Cleaning up controller...")
+            self.controller_manager.cleanup()
             
         print("[SHUTDOWN] All systems stopped")
         

@@ -36,6 +36,14 @@ class Config:
     # Performance
     CALC_THROTTLE_S = 0.1
     ANGLE_CHANGE_THRESHOLD = 0.5
+    
+    # Controller settings
+    JOYSTICK_ENABLED = True
+    JOYSTICK_YAW_AXIS = 2        # X-axis (left/right)
+    JOYSTICK_PITCH_AXIS = 1      # Y-axis (forward/back)
+    JOYSTICK_ZOOM_AXIS = 3       # Throttle axis
+    JOYSTICK_DEAD_ZONE = 0.1     # 10% dead zone
+    JOYSTICK_SENSITIVITY = 80   # Max speed scaling
 
 class GimbalLogger:
     """Comprehensive gimbal command and state logging system"""
@@ -120,7 +128,9 @@ class SettingsStore:
 
     KEYS = [
         "SIYI_IP","SIYI_PORT","SIYI_CAMERA_PORT","SBS_BIND","SBS_PORT",
-        "MAVLINK_ADDRESS","MAVLINK_TX_ADDRESS"
+        "MAVLINK_ADDRESS","MAVLINK_TX_ADDRESS",
+        "JOYSTICK_ENABLED","JOYSTICK_YAW_AXIS","JOYSTICK_PITCH_AXIS",
+        "JOYSTICK_ZOOM_AXIS","JOYSTICK_DEAD_ZONE","JOYSTICK_SENSITIVITY"
     ]
 
     @staticmethod
